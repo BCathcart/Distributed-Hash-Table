@@ -1,4 +1,4 @@
-module github.com/CPEN-431-2021/pa2-BCathcart
+module github.com/abcpen431/miniproject
 
 go 1.15
 
