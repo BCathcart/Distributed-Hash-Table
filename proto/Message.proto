@@ -6,4 +6,5 @@ message Msg {
     bytes messageID = 1;
     bytes payload = 2;
     fixed64 checkSum = 3;
+    uint32 internalID = 4;
 }

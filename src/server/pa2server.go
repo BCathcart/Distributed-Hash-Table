@@ -2,13 +2,16 @@ package main
 
 import (
 	"container/list"
+	"encoding/binary"
 	"fmt"
 	"hash/crc32"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +35,12 @@ const CACHE_TIMEOUT = 6 // Messages only required to live in cache for 5 seconds
 of clients sending messages. The cache will need to expanded in the future once we have a
 better idea of the likely number of clients and their retry rate */
 const MAX_CACHE_ENTRIES = 10
+
+/* Internal Msg IDs */
+const MEMBERSHIP_REQUEST = 0x1
+const HEARTBEAT = 0x2
+const TRANSFER_STARTING = 0x3
+const TRANSFER_FINISHED = 0x4
 
 /* CACHE */
 // Maps msg ID to serialized response
@@ -111,13 +120,39 @@ func putCacheEntry(id string, msg []byte) {
 }
 
 /**
+* Generates a unique 16 byte ID.
+* @param clientIP The client's IP address.
+* @param port Server port number.
+* @return The unique ID as a 16 byte long byte array.
+ */
+func getmsgID(clientIP string, port uint16) []byte {
+	ipArr := strings.Split(clientIP, ".")
+	ipBytes := make([]byte, 5)
+	for i, s := range ipArr {
+		val, _ := strconv.Atoi(s)
+		binary.LittleEndian.PutUint16(ipBytes[i:], uint16(val))
+	}
+	ipBytes = ipBytes[0:4]
+
+	portBytes := make([]byte, 2)
+	binary.LittleEndian.PutUint16(portBytes, port)
+	randBytes := make([]byte, 2)
+	rand.Read(randBytes)
+	timeBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(timeBytes, uint64(time.Now().UnixNano()))
+
+	id := append(append(append(ipBytes, portBytes...), randBytes...), timeBytes...)
+	return id
+}
+
+/**
 * Computes the IEEE CRC checksum based on the message ID and message payload.
 * @param msgID The message ID.
 * @param msgPayload The message payload.
 * @return The checksum.
  */
-func computeChecksum(msgId []byte, msgPayload []byte) uint32 {
-	return crc32.ChecksumIEEE(append(msgId, msgPayload...))
+func computeChecksum(msgID []byte, msgPayload []byte) uint32 {
+	return crc32.ChecksumIEEE(append(msgID, msgPayload...))
 }
 
 /**
@@ -153,14 +188,14 @@ func writeMsg(conn *net.PacketConn, addr net.Addr, msg []byte) {
 * Sends a UDP message.
 * @param conn The connection object to send messages over.
 * @param addr The IP address to send to.
-* @param msgId The message id.
+* @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgId []byte, payload []byte) {
-	checksum := computeChecksum(msgId, payload)
+func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgID []byte, payload []byte) {
+	checksum := computeChecksum(msgID, payload)
 
 	resMsg := &pb.Msg{
-		MessageID: msgId,
+		MessageID: msgID,
 		Payload:   payload,
 		CheckSum:  uint64(checksum),
 	}
@@ -171,9 +206,104 @@ func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgId []byte, payload []byt
 	}
 
 	// Cache message
-	putCacheEntry(string(msgId), serMsg)
+	putCacheEntry(string(msgID), serMsg)
 
 	writeMsg(conn, addr, serMsg)
+}
+
+/**
+* Receives a UDP message.
+* @param conn The UDP connection to listen to for the message.
+* @param timeoutMS Retry timeout in milliseconds.
+* @return The received message as a byte array, or nil if an error occurred.
+* @return The error object if an error occured, nil otherwise.
+ */
+func rcvMsgUDP(conn *net.PacketCon, timeoutMS int) ([]byte, error) {
+	var err error
+	var numBytes int
+
+	// Set up timeout
+	timeout := time.Now().Add(time.Millisecond * time.Duration(timeoutMS))
+	err = conn.SetReadDeadline(timeout)
+	if err != nil {
+		return nil, err
+	}
+
+	// Read from UDP connection
+	buffer := make([]byte, MAX_BUFFER_SIZE)
+	numBytes, _, err = conn.ReadFromUDP(buffer)
+	if err != nil {
+		return nil, err
+	}
+
+	return buffer[0:numBytes], nil
+}
+
+/**
+* Makes a request to the server with the given payload. Requests are retried on failure with the
+* timeout doubling each time until 3 retries are reached or the timeout exceeds 5000ms.
+* @param conn The UDP connection to make the request over.
+* @param payload The payload for the request.
+* @param port Server port number.
+* @param timeoutMS Retry timeout in milliseconds;
+*	must be less than 5000 and the recommended default value is 100.
+* @return The received message's payload as a byte array, or nil if an error occurred.
+* @return The error object if an error occured, nil otherwise.
+ */
+func makeRequest(conn *net.UDPConn, payload []byte, port int, timeoutMS int) ([]byte, error) {
+	localAddr := conn.LocalAddr().(*net.UDPAddr).IP.String()
+	msgID := getmsgID(localAddr, uint16(port))
+	// msgID = []byte("69") // TODO: remove!
+
+	checksum := computeChecksum(msgID, payload)
+	fmt.Println(checksum)
+
+	// Serialize message
+	msg := &pb.Msg{
+		MessageID: msgID,
+		Payload:   payload,
+		CheckSum:  uint64(checksum),
+	}
+
+	var serResPayload []byte
+	var resMsg *pb.Msg
+	for retry := 0; retry <= NUM_RETRIES; retry++ {
+
+		err := sendUDPMsg(conn, msg)
+		if err != nil {
+			fmt.Println("ERROR: Failed to send UDP message")
+			return nil, err
+		}
+
+		// fmt.Println("INFO: Request sent")
+
+		serResPayload, err = rcvMsgUDP(conn, timeoutMS)
+		if err != nil {
+			if retry < NUM_RETRIES && timeoutMS*2 < 5000 {
+				timeoutMS = 2 * timeoutMS // Double the timeout
+				fmt.Println("ERROR: No UDP message received. " + err.Error())
+				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
+			} else {
+				fmt.Println("ERROR: Failed to receive a UDP message.")
+				return nil, err
+			}
+		} else {
+			// Deserialize message
+			resMsg = &pb.Msg{}
+			proto.Unmarshal(serResPayload, resMsg)
+			if !verifyRcvdMsg(resMsg, msgID) {
+				timeoutMS = 2 * timeoutMS // Double the timeout
+				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
+				continue
+			} else {
+				break
+			}
+		}
+	}
+
+	// fmt.Println("INFO: Valid response received")
+
+	return resMsg.Payload, nil
 }
 
 /**
@@ -183,23 +313,7 @@ func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgId []byte, payload []byt
 * @param serialMsg The incoming message.
 * @param handler The message handler callback.
  */
-func processMsg(conn *net.PacketConn, addr net.Addr, serialMsg []byte, handler func([]byte) ([]byte, error)) {
-	// Deserialize message
-	reqMsg := &pb.Msg{}
-	err := proto.Unmarshal(serialMsg, reqMsg)
-	if err != nil {
-		// Disregard messages with invalid format
-		log.Println("WARN msg with invalid format. Sender = " + addr.String())
-		return
-	}
-
-	// Verify checksum
-	if !verifyChecksum(reqMsg) {
-		// Disregard messages with invalid checksums
-		log.Println("WARN checksum mismatch. Sender = " + addr.String())
-		return
-	}
-
+func processRequest(conn *net.PacketConn, addr net.Addr, reqMsg *pb.Msg, handler func([]byte) ([]byte, error)) {
 	// Check if response is already cached
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
@@ -231,7 +345,7 @@ func processMsg(conn *net.PacketConn, addr net.Addr, serialMsg []byte, handler f
 * @param handler The message handler callback.
 * @return An error message if failed to read from the connection.
  */
-func requestListener(conn *net.PacketConn, handler func([]byte) ([]byte, error)) error {
+func msgListener(conn *net.PacketConn, reqHandler func([]byte) ([]byte, error)) error {
 	buffer := make([]byte, MAX_BUFFER_SIZE)
 
 	// Listen for packets
@@ -242,7 +356,164 @@ func requestListener(conn *net.PacketConn, handler func([]byte) ([]byte, error))
 			return err
 		}
 
-		go processMsg(conn, addr, buffer[0:n], handler)
+		// TODO: determine if internal or external here
+		// Deserialize message
+		reqMsg := &pb.Msg{}
+		err = proto.Unmarshal(buffer[0:n], reqMsg)
+		if err != nil {
+			// Disregard messages with invalid format
+			log.Println("WARN msg with invalid format. Sender = " + addr.String())
+		}
+
+		// Verify checksum
+		if !verifyChecksum(reqMsg) {
+			// Disregard messages with invalid checksums
+			log.Println("WARN checksum mismatch. Sender = " + addr.String())
+		}
+
+		if pb.Msg.InternalID != nil {
+			// TODO: pass as arg
+			go internalMsgHandler(conn, addr, reqMsg)
+
+		} else {
+			go processRequest(conn, addr, reqMsg, reqHandler)
+		}
+	}
+}
+
+/***** GOSSIP PROTOCOL *****/
+
+type Member struct {
+	ip        string
+	port      int
+	key       int
+	heartbeat int
+}
+
+var STATUS_NORMAL = 0x1
+var STATUS_BOOTSTRAPPING = 0x2
+
+var HEARTBEAT_INTERVAL = 1000 // ms
+
+var members_ []Member
+
+var key_ int
+var position_ int
+
+// TODO: add lock
+
+var status_ int
+
+// TODO: create new Msg.proto with optional param to distinguish internal messages
+
+// TODO: slice of other nodes (slices are variable length)
+
+func sortAndReturnIdx() int {
+	// TODO: lock
+	sort.SliceStable(members_, func(i, j int) bool {
+		return members_[i].key < members_[j].key
+	})
+
+	// find and update index of the current key
+
+	for i, _ := range members_ {
+		if members_[i].key == key_ {
+			// TODO: unlock
+			return i
+		}
+	}
+
+	// TODO: unlock
+
+	// Should never get here!
+	return -1
+}
+
+func bootstrap(port int) {
+	// TODO: problem with not being able to know your own IP?
+
+	// TODO: Get Key here
+	key_ = rand.Intn(100)
+
+	// Add this node to Member array
+	members_ = append(members_, Member{ip: "", port: port, key: key_})
+	position_ = 0
+
+	// Update heartbeat every HEARTBEAT_INTERVAL seconds
+	var ticker = time.NewTicker(time.Millisecond * CACHE_TIMEOUT)
+	go func() {
+		for {
+			<-ticker.C
+			tickHeartbeat()
+		}
+	}()
+
+	// Send initial membership request message - this tells receiving node they should try to contact the successor first as well as
+	// respond with this nodes IP address
+}
+
+/**
+* Updates the heartbeat by one.
+ */
+func tickHeartbeat() {
+	// TODO: lock members
+	members_[position_].heartbeat += 1
+	// TODO: unlock members
+}
+
+func membershipReqHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+	// TODO: find successor and forward the
+	// membership request there to start transfer
+
+	// If this node is the successor, start transferring keys
+
+	// If this node is the successor and already in the process of
+	// receiving or sending a transfer, queue request
+}
+
+func heartbeatHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+	// Compare Members list and update as necessary
+	// Need to ignore any statuses of "Unavailable" (or just don't send them)
+	// since failure detection is local
+
+	// If it includes a new node they are not aware of, check if we are the successor
+	// and start transferring
+	// - can this even happen?
+	// - no, it shouldn't happen without rejoiins because successor is always the first
+	// node to learn about the predecessor joining
+
+	// Only transfer if prececessor that had been unavailable came back online
+	// - need to check version number before writing
+
+}
+
+func transferStarted(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+	// Register that the transfer is started
+	// Start timeout, save IP of sender, and reset timer everytime receive a write from
+	// the IP address
+	// If timeout hit, set status to "Normal"
+}
+
+func transferEnded(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+	// End timer and set status to "Normal"
+}
+
+func internalMsgHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+	switch pb.Msg.InternalID {
+	case MEMBERSHIP_REQUEST:
+		membershipReqHandler(conn, addr, msg)
+
+	case HEARTBEAT:
+		heartbeatHandler(conn, addr, msg)
+
+	case TRANSFER_STARTING:
+		transferStarted(conn, addr, msg)
+
+	case TRANSFER_FINISHED:
+		transferFinished(conn, addr, msg)
+
+	default:
+		log.Println("WARN: Invalid InternalID: " + pb.Msg.InternalID)
 	}
 }
 
@@ -583,13 +854,29 @@ func runServer(port int) error {
 
 	kvStore_ = NewKVStore()
 
-	err = requestListener(&conn, requestHandler)
+	err = msgListener(&conn, requestHandler, internalMsgHandler)
 
 	// Should never get here if everything is working
 	return err
 }
 
 func main() {
+	// TODO: parse file with IP addresses and ports of other nodes
+
+	nodes := []struct {
+		string
+		int
+	}{{"127.0.0.1", 12345}, {"127.0.0.1", 12346}}
+
+	if len(nodes) == 0 {
+		status_ = STATUS_NORMAL
+	} else {
+		status_ = STATUS_BOOTSTRAPPING
+	}
+
+	// Start own heartbeat
+	bootstrap(port)
+
 	// Parse cmd line args
 	arguments := os.Args
 	if len(arguments) != 2 {
