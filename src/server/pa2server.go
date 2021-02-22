@@ -39,8 +39,7 @@ const MAX_CACHE_ENTRIES = 10
 /* Internal Msg IDs */
 const MEMBERSHIP_REQUEST = 0x1
 const HEARTBEAT = 0x2
-const TRANSFER_STARTING = 0x3
-const TRANSFER_FINISHED = 0x4
+const TRANSFER_FINISHED = 0x3
 
 /* CACHE */
 // Maps msg ID to serialized response
@@ -185,13 +184,13 @@ func writeMsg(conn *net.PacketConn, addr net.Addr, msg []byte) {
 }
 
 /**
-* Sends a UDP message.
+* Sends a UDP message responding to a request.
 * @param conn The connection object to send messages over.
 * @param addr The IP address to send to.
 * @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgID []byte, payload []byte) {
+func sendUDPResponse(conn *net.PacketConn, addr net.Addr, msgID []byte, payload []byte) {
 	checksum := computeChecksum(msgID, payload)
 
 	resMsg := &pb.Msg{
@@ -211,100 +210,103 @@ func sendUDPMsg(conn *net.PacketConn, addr net.Addr, msgID []byte, payload []byt
 	writeMsg(conn, addr, serMsg)
 }
 
-/**
-* Receives a UDP message.
-* @param conn The UDP connection to listen to for the message.
-* @param timeoutMS Retry timeout in milliseconds.
-* @return The received message as a byte array, or nil if an error occurred.
-* @return The error object if an error occured, nil otherwise.
- */
-func rcvMsgUDP(conn *net.PacketCon, timeoutMS int) ([]byte, error) {
-	var err error
-	var numBytes int
+// TASK1: Develop internal messaging system. My idea is to use same port and read all messages in msgListener().
+// I added the "internalID" field to Msg.proto that can be used to distinguish external requests from internal requests.
+// We would then differentiate types of internal messages based on the "internalID" field's value (MEMBERSHIP_REQUEST, HEARTBEAT, etc).
+// The tricky part is that to use the same retry mechanism, we would need to keep a queue of messages waiting for a response.
+// Then when a internal message comes in, we can check if it is a response for one of the queued internal requests we sent and delete that cache entry.
+// We can periodically (e.g. every 3 seconds) check the front of the queue and re-send any timed out requests.
+// I pasted some potentially relevant code from pa1 below. Whether or not we cache responses to internal messages is another design choice.
 
-	// Set up timeout
-	timeout := time.Now().Add(time.Millisecond * time.Duration(timeoutMS))
-	err = conn.SetReadDeadline(timeout)
-	if err != nil {
-		return nil, err
-	}
+// /**
+// * Makes a request to the server with the given payload. Requests are retried on failure with the
+// * timeout doubling each time until 3 retries are reached or the timeout exceeds 5000ms.
+// * @param conn The UDP connection to make the request over.
+// * @param payload The payload for the request.
+// * @param port Server port number.
+// * @param timeoutMS Retry timeout in milliseconds;
+// *	must be less than 5000 and the recommended default value is 100.
+// * @return The received message's payload as a byte array, or nil if an error occurred.
+// * @return The error object if an error occured, nil otherwise.
+//  */
+//  func makeRequest(conn *net.PacketConn, payload []byte, port int, timeoutMS int) ([]byte, error) {
+// 	localAddr := conn.LocalAddr().(*net.UDPAddr).IP.String()
+// 	msgID := getmsgID(localAddr, uint16(port))
 
-	// Read from UDP connection
-	buffer := make([]byte, MAX_BUFFER_SIZE)
-	numBytes, _, err = conn.ReadFromUDP(buffer)
-	if err != nil {
-		return nil, err
-	}
+// 	checksum := computeChecksum(msgID, payload)
+// 	fmt.Println(checksum)
 
-	return buffer[0:numBytes], nil
-}
+// 	// Serialize message
+// 	msg := &pb.Msg{
+// 		MessageID: msgID,
+// 		Payload:   payload,
+// 		CheckSum:  uint64(checksum),
+// 	}
 
-/**
-* Makes a request to the server with the given payload. Requests are retried on failure with the
-* timeout doubling each time until 3 retries are reached or the timeout exceeds 5000ms.
-* @param conn The UDP connection to make the request over.
-* @param payload The payload for the request.
-* @param port Server port number.
-* @param timeoutMS Retry timeout in milliseconds;
-*	must be less than 5000 and the recommended default value is 100.
-* @return The received message's payload as a byte array, or nil if an error occurred.
-* @return The error object if an error occured, nil otherwise.
- */
-func makeRequest(conn *net.UDPConn, payload []byte, port int, timeoutMS int) ([]byte, error) {
-	localAddr := conn.LocalAddr().(*net.UDPAddr).IP.String()
-	msgID := getmsgID(localAddr, uint16(port))
-	// msgID = []byte("69") // TODO: remove!
+// 	var serResPayload []byte
+// 	var resMsg *pb.Msg
+// 	for retry := 0; retry <= NUM_RETRIES; retry++ {
 
-	checksum := computeChecksum(msgID, payload)
-	fmt.Println(checksum)
+// 		err := sendUDPRequest(conn, msg)
+// 		if err != nil {
+// 			fmt.Println("ERROR: Failed to send UDP message")
+// 			return nil, err
+// 		}
 
-	// Serialize message
-	msg := &pb.Msg{
-		MessageID: msgID,
-		Payload:   payload,
-		CheckSum:  uint64(checksum),
-	}
+// 		serResPayload, err = rcvMsgUDP(conn, timeoutMS)
+// 		if err != nil {
+// 			if retry < NUM_RETRIES && timeoutMS*2 < 5000 {
+// 				timeoutMS = 2 * timeoutMS // Double the timeout
+// 				fmt.Println("ERROR: No UDP message received. " + err.Error())
+// 				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
+// 			} else {
+// 				fmt.Println("ERROR: Failed to receive a UDP message.")
+// 				return nil, err
+// 			}
+// 		} else {
+// 			// Deserialize message
+// 			resMsg = &pb.Msg{}
+// 			proto.Unmarshal(serResPayload, resMsg)
+// 			if !verifyRcvdMsg(resMsg, msgID) {
+// 				timeoutMS = 2 * timeoutMS // Double the timeout
+// 				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
+// 				continue
+// 			} else {
+// 				break
+// 			}
+// 		}
+// 	}
 
-	var serResPayload []byte
-	var resMsg *pb.Msg
-	for retry := 0; retry <= NUM_RETRIES; retry++ {
+// 	return resMsg.Payload, nil
+// }
 
-		err := sendUDPMsg(conn, msg)
-		if err != nil {
-			fmt.Println("ERROR: Failed to send UDP message")
-			return nil, err
-		}
+// /**
+// * Receives a UDP message.
+// * @param conn The UDP connection to listen to for the message.
+// * @param timeoutMS Retry timeout in milliseconds.
+// * @return The received message as a byte array, or nil if an error occurred.
+// * @return The error object if an error occured, nil otherwise.
+//  */
+// func rcvMsgUDP(conn *net.PacketConn, timeoutMS int) ([]byte, error) {
+// 	var err error
+// 	var numBytes int
 
-		// fmt.Println("INFO: Request sent")
+// 	// Set up timeout
+// 	timeout := time.Now().Add(time.Millisecond * time.Duration(timeoutMS))
+// 	err = conn.SetReadDeadline(timeout)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-		serResPayload, err = rcvMsgUDP(conn, timeoutMS)
-		if err != nil {
-			if retry < NUM_RETRIES && timeoutMS*2 < 5000 {
-				timeoutMS = 2 * timeoutMS // Double the timeout
-				fmt.Println("ERROR: No UDP message received. " + err.Error())
-				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
-			} else {
-				fmt.Println("ERROR: Failed to receive a UDP message.")
-				return nil, err
-			}
-		} else {
-			// Deserialize message
-			resMsg = &pb.Msg{}
-			proto.Unmarshal(serResPayload, resMsg)
-			if !verifyRcvdMsg(resMsg, msgID) {
-				timeoutMS = 2 * timeoutMS // Double the timeout
-				fmt.Println("INFO: Retrying with", timeoutMS, "ms timeout")
-				continue
-			} else {
-				break
-			}
-		}
-	}
+// 	// Read from connection
+// 	buffer := make([]byte, MAX_BUFFER_SIZE)
+// 	numBytes, _, err = conn.ReadFrom(buffer)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	// fmt.Println("INFO: Valid response received")
-
-	return resMsg.Payload, nil
-}
+// 	return buffer[0:numBytes], nil
+// }
 
 /**
 * Processes a received message and passes it to the handler callback.
@@ -336,7 +338,7 @@ func processRequest(conn *net.PacketConn, addr net.Addr, reqMsg *pb.Msg, handler
 	}
 
 	// Send response
-	sendUDPMsg(conn, addr, reqMsg.MessageID, payload)
+	sendUDPResponse(conn, addr, reqMsg.MessageID, payload)
 }
 
 /**
@@ -356,7 +358,6 @@ func msgListener(conn *net.PacketConn, reqHandler func([]byte) ([]byte, error)) 
 			return err
 		}
 
-		// TODO: determine if internal or external here
 		// Deserialize message
 		reqMsg := &pb.Msg{}
 		err = proto.Unmarshal(buffer[0:n], reqMsg)
@@ -371,10 +372,10 @@ func msgListener(conn *net.PacketConn, reqHandler func([]byte) ([]byte, error)) 
 			log.Println("WARN checksum mismatch. Sender = " + addr.String())
 		}
 
+		// Determine if an internal or external message
 		if pb.Msg.InternalID != nil {
 			// TODO: pass as arg
 			go internalMsgHandler(conn, addr, reqMsg)
-
 		} else {
 			go processRequest(conn, addr, reqMsg, reqHandler)
 		}
@@ -383,32 +384,43 @@ func msgListener(conn *net.PacketConn, reqHandler func([]byte) ([]byte, error)) 
 
 /***** GOSSIP PROTOCOL *****/
 
-type Member struct {
-	ip        string
-	port      int
-	key       int
-	heartbeat int
-}
-
 var STATUS_NORMAL = 0x1
 var STATUS_BOOTSTRAPPING = 0x2
 
 var HEARTBEAT_INTERVAL = 1000 // ms
 
-var members_ []Member
-
+// Maps msg ID to serialized response
+var memberStore_ *MemberStore
 var key_ int
-var position_ int
 
-// TODO: add lock
+type Member struct {
+	ip        string
+	port      int
+	key       int
+	heartbeat int
+	status    int
+}
 
-var status_ int
+type MemberStore struct {
+	lock     sync.Mutex
+	members  []Member
+	position int
+}
 
-// TODO: create new Msg.proto with optional param to distinguish internal messages
+/**
+* Creates and returns a pointer to a new MemberStore
+* @return The member store.
+ */
+func NewMemberStore() *MemberStore {
+	memberStore := new(MemberStore)
+	return memberStore
+}
 
-// TODO: slice of other nodes (slices are variable length)
-
-func sortAndReturnIdx() int {
+/**
+* Sorts and updates the
+* @return The member store.
+ */
+func sortAndUpdateIdx() int {
 	// TODO: lock
 	sort.SliceStable(members_, func(i, j int) bool {
 		return members_[i].key < members_[j].key
@@ -418,84 +430,83 @@ func sortAndReturnIdx() int {
 
 	for i, _ := range members_ {
 		if members_[i].key == key_ {
+			memberStore_.position = i
 			// TODO: unlock
-			return i
+			return
 		}
 	}
 
 	// TODO: unlock
 
 	// Should never get here!
+	log.Println("Error: could not find own key in member array")
 	return -1
-}
-
-func bootstrap(port int) {
-	// TODO: problem with not being able to know your own IP?
-
-	// TODO: Get Key here
-	key_ = rand.Intn(100)
-
-	// Add this node to Member array
-	members_ = append(members_, Member{ip: "", port: port, key: key_})
-	position_ = 0
-
-	// Update heartbeat every HEARTBEAT_INTERVAL seconds
-	var ticker = time.NewTicker(time.Millisecond * CACHE_TIMEOUT)
-	go func() {
-		for {
-			<-ticker.C
-			tickHeartbeat()
-		}
-	}()
-
-	// Send initial membership request message - this tells receiving node they should try to contact the successor first as well as
-	// respond with this nodes IP address
 }
 
 /**
 * Updates the heartbeat by one.
  */
 func tickHeartbeat() {
-	// TODO: lock members
-	members_[position_].heartbeat += 1
-	// TODO: unlock members
+	memberStore_.lock.Lock()
+	memberStore_.members[position_].heartbeat += 1
+	memberStore_.lock.Unlock()
 }
 
+// TASK3 (part 1): Membership protocol
+func makeMembershipReq() {
+	// Repeat this request periodically until receive TRANSFER_FINISHED message
+	// to protect against nodes failing (this will probably be more important for later milestones)
+}
+
+// TASK4 (part 1): Gossip heartbeat (send the entire member array in the MemberStore).
+func gossipHeartbeat() {
+
+}
+
+// TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
+func transferToPredecessor() {
+
+}
+
+// TASK3 (part 2): Membership protocol
 func membershipReqHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
-	// TODO: find successor and forward the
-	// membership request there to start transfer
+	// Find successor node and forward the
+	// membership request there to start the transfer
 
 	// If this node is the successor, start transferring keys
 
 	// If this node is the successor and already in the process of
-	// receiving or sending a transfer, queue request
+	// receiving or sending a transfer, respond with "Busy" to the request.
+	// The node sending the request will then re-send it after waiting a bit.
 }
 
+// TASK4 (part 2): Compare incoming member array with current member array and
+// update entries to the one with the larger heartbeat (i.e. newer gossip)
 func heartbeatHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	// Compare Members list and update as necessary
 	// Need to ignore any statuses of "Unavailable" (or just don't send them)
-	// since failure detection is local
+	// since failure detection is local.
 
-	// If it includes a new node they are not aware of, check if we are the successor
-	// and start transferring
-	// - can this even happen?
-	// - no, it shouldn't happen without rejoiins because successor is always the first
-	// node to learn about the predecessor joining
-
-	// Only transfer if prececessor that had been unavailable came back online
+	// (Not a big priority for M1) If we receive a heartbeat update from a predecessor
+	// that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
 	// - need to check version number before writing
 
+	// Sort the member store if we just leaned of a new node
+	sortAndUpdateIdx()
 }
 
-func transferStarted(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
-	// Register that the transfer is started
-	// Start timeout, save IP of sender, and reset timer everytime receive a write from
-	// the IP address
-	// If timeout hit, set status to "Normal"
-}
+/* Ignore this */
+// func transferStartedHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+// 	// Register that the transfer is started
+// 	// Start timeout, save IP of sender, and reset timer everytime receive a write from
+// 	// the IP address
+// 	// If timeout hit, set status to "Normal"
+// }
 
-func transferEnded(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
+// TASK3 (part 4): Membership protocol - transfer to this node is finished
+func transferEndedHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	// End timer and set status to "Normal"
+	// Nodes will now start sending requests directly to us rather than to our successor.
 }
 
 func internalMsgHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
@@ -506,15 +517,53 @@ func internalMsgHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	case HEARTBEAT:
 		heartbeatHandler(conn, addr, msg)
 
-	case TRANSFER_STARTING:
-		transferStarted(conn, addr, msg)
-
 	case TRANSFER_FINISHED:
-		transferFinished(conn, addr, msg)
+		transferFinishedHandler(conn, addr, msg)
 
 	default:
 		log.Println("WARN: Invalid InternalID: " + pb.Msg.InternalID)
 	}
+}
+
+func bootstrap(conn *net.PacketConn, otherMembers []struct{ string int }, port int) {
+	memberStore_ = NewMemberStore()
+
+	// TODO: problem with not being able to know your own IP?
+
+	// TODO: Get Key here
+	key_ = rand.Intn(100)
+
+	var status int
+	if len(nodes) == 0 {
+		status = STATUS_NORMAL
+	} else {
+		status = STATUS_BOOTSTRAPPING
+	}
+
+	// Add this node to Member array
+	memberStore_.members = append(members_, Member{ip: "", port: port, key: key_, heartbeat: 0, status: STATUS_NORMAL})
+	memberStore_.position = 0
+
+	// Update heartbeat every HEARTBEAT_INTERVAL seconds
+	var ticker = time.NewTicker(time.Millisecond * CACHE_TIMEOUT)
+	go func() {
+		for {
+			<-ticker.C
+			tickHeartbeat()
+		}
+	}()
+
+	requestReplyLayerInit()
+
+	// Send initial membership request message - this tells receiving node they should try to contact the successor first (as well as
+	// respond with this node's IP address if needed)
+
+	// If no other nodes are known, then assume this is the first node
+	// and this node simply waits to be contacted
+	if len(otherMembers) != 0 {
+		makeMembershipReq()
+	}
+
 }
 
 /************* APPLICATION CODE *************/
@@ -844,13 +893,16 @@ func requestHandler(serializedReq []byte) ([]byte, error) {
 * @param port The port to listen for UDP packets on.
 * @return an error
  */
-func runServer(port int) error {
+func runServer(otherMembers []struct{ string int }, port int) error {
 	// Listen on all available IP addresses
 	conn, err := net.ListenPacket("udp", ":"+strconv.Itoa(port))
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+
+	// Bootstrap node
+	bootstrap(&conn, otherMembers, port)
 
 	kvStore_ = NewKVStore()
 
@@ -861,21 +913,9 @@ func runServer(port int) error {
 }
 
 func main() {
-	// TODO: parse file with IP addresses and ports of other nodes
 
-	nodes := []struct {
-		string
-		int
-	}{{"127.0.0.1", 12345}, {"127.0.0.1", 12346}}
-
-	if len(nodes) == 0 {
-		status_ = STATUS_NORMAL
-	} else {
-		status_ = STATUS_BOOTSTRAPPING
-	}
-
-	// Start own heartbeat
-	bootstrap(port)
+	// TASK 2: Dockerize project and parse port and member list file arguments.
+	// I added the hardcoded "nodes" array that could be used for testing.
 
 	// Parse cmd line args
 	arguments := os.Args
@@ -895,9 +935,13 @@ func main() {
 		return
 	}
 
-	requestReplyLayerInit()
+	// TODO: parse file with IP addresses and ports of other nodes
+	nodes := []struct {
+		string
+		int
+	}{{"127.0.0.1", 12345}, {"127.0.0.1", 12346}}
 
-	err = runServer(port)
+	err = runServer(nodes, port)
 	if err != nil {
 		fmt.Println("Server encountered an error. " + err.Error())
 	}
