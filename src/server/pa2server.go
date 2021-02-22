@@ -16,7 +16,7 @@ import (
 
 	maps "github.com/ross-oreto/go-list-map"
 
-	pb "github.com/CPEN-431-2021/pa2-BCathcart/pb/protobuf"
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
 
 	"google.golang.org/protobuf/proto"
 )
