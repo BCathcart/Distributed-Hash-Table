@@ -217,6 +217,7 @@ func sendUDPResponse(conn *net.PacketConn, addr net.Addr, msgID []byte, payload 
 // Then when a internal message comes in, we can check if it is a response for one of the queued internal requests we sent and delete that cache entry.
 // We can periodically (e.g. every 3 seconds) check the front of the queue and re-send any timed out requests.
 // I pasted some potentially relevant code from pa1 below. Whether or not we cache responses to internal messages is another design choice.
+// - don't retry internal requests
 
 // /**
 // * Makes a request to the server with the given payload. Requests are retried on failure with the
@@ -386,6 +387,7 @@ func msgListener(conn *net.PacketConn, reqHandler func([]byte) ([]byte, error)) 
 
 var STATUS_NORMAL = 0x1
 var STATUS_BOOTSTRAPPING = 0x2
+var STATUS_UNAVAILABLE = 0x3
 
 var HEARTBEAT_INTERVAL = 1000 // ms
 
@@ -396,7 +398,7 @@ var key_ int
 type Member struct {
 	ip        string
 	port      int
-	key       int
+	key       int // Hash keys of all members (position in ring)
 	heartbeat int
 	status    int
 }
@@ -452,22 +454,32 @@ func tickHeartbeat() {
 	memberStore_.lock.Unlock()
 }
 
-// TASK3 (part 1): Membership protocol
+// TOM
+// TASK3 (part 1): Membership protocol (bootstrapping process)
 func makeMembershipReq() {
+	// Send request to random node (from list of nodes)
+
 	// Repeat this request periodically until receive TRANSFER_FINISHED message
 	// to protect against nodes failing (this will probably be more important for later milestones)
 }
 
+// Rozhan
 // TASK4 (part 1): Gossip heartbeat (send the entire member array in the MemberStore).
 func gossipHeartbeat() {
+	// Package MemberStore.members array
 
 }
 
+// Shay
 // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
-func transferToPredecessor() {
-
+// The actual transfer from the succesor to the predecessor
+// Send a TRANSFER_FINISHED when it's done
+func transferToPredecessor( /* predecessor key */ ) {
+	// Send all key-value pairs that is the responsibility of the predecessor
+	// Use PUT requests (like an external client)
 }
 
+// TOM
 // TASK3 (part 2): Membership protocol
 func membershipReqHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	// Find successor node and forward the
@@ -480,6 +492,7 @@ func membershipReqHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	// The node sending the request will then re-send it after waiting a bit.
 }
 
+// Rozhan
 // TASK4 (part 2): Compare incoming member array with current member array and
 // update entries to the one with the larger heartbeat (i.e. newer gossip)
 func heartbeatHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
@@ -503,6 +516,7 @@ func heartbeatHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 // 	// If timeout hit, set status to "Normal"
 // }
 
+// TOM + Shay
 // TASK3 (part 4): Membership protocol - transfer to this node is finished
 func transferEndedHandler(conn *net.PacketConn, addr net.Addr, msg *pb.Msg) {
 	// End timer and set status to "Normal"
@@ -916,6 +930,7 @@ func main() {
 
 	// TASK 2: Dockerize project and parse port and member list file arguments.
 	// I added the hardcoded "nodes" array that could be used for testing.
+	// - Rozhan
 
 	// Parse cmd line args
 	arguments := os.Args
