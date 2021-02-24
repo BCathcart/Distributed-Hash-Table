@@ -22,7 +22,7 @@ var hashingError = errors.New("error hashing node")
 type HashingRing struct {
 	partitions uint32
 	numNodes   uint32
-	memberMap  map[uint32]*Member
+	memberMap  map[uint32]*Member2
 	sync.RWMutex
 }
 
@@ -34,7 +34,7 @@ func InitHashingRing() *HashingRing {
 	ring := new(HashingRing)
 	ring.numNodes = 1
 	ring.partitions = numPartitions
-	ring.memberMap = make(map[uint32]*Member)
+	ring.memberMap = make(map[uint32]*Member2)
 	return ring
 }
 
@@ -42,15 +42,16 @@ func InitHashingRing() *HashingRing {
 Members. Using this for development, will change once membership protocol is created.
 */
 
-type Member struct {
+// Re-named to Member2 for compiling reasons
+type Member2 struct {
 	name         string
 	checkSum     uint32
 	vNodeIndexes []uint32
 	kvStore_     *KVStore
 }
 
-func NewMember(memberString string, checkSum uint32) *Member {
-	member := new(Member)
+func NewMember2(memberString string, checkSum uint32) *Member2 {
+	member := new(Member2)
 	member.name = memberString
 	member.checkSum = checkSum
 
@@ -59,11 +60,11 @@ func NewMember(memberString string, checkSum uint32) *Member {
 
 /* Adding nodes to ring */
 func AddNode(memberString string, ring *HashingRing) error {
-	member := NewMember(memberString, crc32.ChecksumIEEE([]byte(memberString)))
+	member := NewMember2(memberString, crc32.ChecksumIEEE([]byte(memberString)))
 	return AddVNodesToRing(member, ring)
 }
 
-func AddVNodesToRing(member *Member, ring *HashingRing) error {
+func AddVNodesToRing(member *Member2, ring *HashingRing) error {
 	baseNodePos := member.checkSum % numPartitions
 
 	for vNode := 0; vNode < vNodesPerNode; vNode++ {
