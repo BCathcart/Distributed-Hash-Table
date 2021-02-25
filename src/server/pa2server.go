@@ -2,11 +2,10 @@ package main
 
 import (
 	"container/list"
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	"github.com/abcpen431/miniproject/src/server/util"
 	"log"
-	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -17,577 +16,10 @@ import (
 	"sync"
 	"time"
 
-	maps "github.com/ross-oreto/go-list-map"
-
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
-
 	"google.golang.org/protobuf/proto"
 )
 
 var MAX_MEM_USAGE uint64 = 120 * 1024 * 1024 // Max is actually 128 MB (8MB of buffer)
-
-/************* REQUEST/REPLY PROTOCOL CODE *************/
-var conn *net.PacketConn
-
-/* Internal Msg IDs */
-const EXTERNAL_REQUEST = 0x0
-const MEMBERSHIP_REQUEST = 0x1
-const HEARTBEAT = 0x2
-const TRANSFER_FINISHED = 0x3
-const FORWARDED_CLIENT_REQ = 0x4
-const PING = 0x5
-
-const INTERNAL_REQ_RETRIES = 1
-
-const MAX_BUFFER_SIZE = 11000
-
-type Cache struct {
-	lock sync.Mutex
-	data *maps.Map
-}
-
-/**
-* Creates and returns a pointer to a new cache
-* @return The cache.
- */
-func NewCache() *Cache {
-	cache := new(Cache)
-	cache.data = maps.New()
-	return cache
-}
-
-/*** START Req Cache Code ***/
-// Maps msg ID to serialized response
-var reqCache_ *Cache
-
-const REQ_RETRY_TIMEOUT_MS = 250 // ms
-const REQ_CACHE_TIMEOUT = 6      // sec
-
-type ReqCacheEntry struct {
-	msgType       uint8
-	msg           []byte // Remove if only retry ping messages (don't need to store if external requests)
-	time          time.Time
-	retries       uint8
-	destMemberKey int
-	addr          *net.Addr
-	returnAddr    *net.Addr
-	isFirstHop    bool // Used so we know to remove "internalID" and "isResponse" from response
-}
-
-/**
-* Checks for timed out request cache entries.
- */
-func sweepReqCache() {
-	var membersToPing []int
-	var errResponseAddrs []*net.Addr
-
-	reqCache_.lock.Lock()
-	entries := reqCache_.data.Entries()
-	for i := 0; i < len(entries); i++ {
-		entry := entries[i]
-		reqCacheEntry := entry.Value.(ReqCacheEntry)
-		elapsedTime := time.Now().Sub(reqCacheEntry.time)
-		if elapsedTime.Milliseconds() > REQ_RETRY_TIMEOUT_MS {
-			ndToPing, ndToSndErrRes := handleTimedOutReqCacheEntry(entry.Key.(string), &reqCacheEntry)
-			if ndToPing != -1 {
-				membersToPing = append(membersToPing, ndToPing)
-			}
-			if ndToSndErrRes != nil {
-				errResponseAddrs = append(errResponseAddrs, ndToSndErrRes)
-			}
-
-			// Clean up stale client requests
-		} else if elapsedTime.Seconds() > REQ_CACHE_TIMEOUT {
-			reqCache_.data.Delete(entry.Key)
-		}
-	}
-	reqCache_.lock.Unlock()
-
-	// TODO: send error responses
-
-	// TODO: send ping requests
-}
-
-/*
-* Handles requests that have not received a response within the timeout period
-* @param reqCacheEntry The timed out cache entry
-* @return node to Ping, -1 no nodes need to be pinged.
-* @return clients/nodes address to send error responses too, nil if no error responses need to be sent.
- */
-func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (int, *net.Addr) {
-	isClientReq := reqCacheEntry.msgType == FORWARDED_CLIENT_REQ
-
-	ndToPing := -1
-	var ndToSndErrRes *net.Addr = nil
-
-	// Return error if this is the clients third retry
-	if isClientReq && reqCacheEntry.retries == 3 {
-		// NOTE: client is responsible for retries
-		// Delete the entry
-		reqCache_.data.Delete(key)
-
-		// Send internal communication error response back to original requester
-		ndToSndErrRes = reqCacheEntry.returnAddr
-
-		// Send ping message to node we failed to receive a response from
-		ndToPing = reqCacheEntry.destMemberKey
-
-	} else if !isClientReq {
-		// Retry internal requests up to INTERNAL_REQ_RETRIES times
-		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES {
-			// Re-send message
-			writeMsg(*reqCacheEntry.addr, reqCacheEntry.msg)
-
-			// Update num retries in
-			reqCacheEntry.retries += 1
-			reqCache_.data.Put(string(key), reqCacheEntry.retries)
-
-		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
-			if reqCacheEntry.msgType == PING {
-				// TODO: set member's status to unavailable if it's a ping message
-				//   - Add function to call here in gossip/membership service
-
-			} else {
-				// Send ping message to node we failed to receive a response from
-				ndToPing = reqCacheEntry.destMemberKey
-			}
-
-			if reqCacheEntry.returnAddr != nil {
-				// Send internal communication error if there is a returnAddr
-				// (i.e. if the req is forwarded which can only happen for membership request)
-				ndToSndErrRes = reqCacheEntry.returnAddr
-			}
-
-			// Delete the entry
-			reqCache_.data.Delete(key)
-		}
-	}
-
-	return ndToPing, ndToSndErrRes
-}
-
-/**
-* Puts a message in the request cache.
-* @param id The message id.
-* @param msgType The type of message (i.e. the InternalID)
-* @param msg The serialized message to cache for retries.
-* @param addr The address request is sent to.
-* @param returnAddr The address the response should be forwarded to (nil if it shouldn't be forwarded)
-* @param isFirstHop True if the request originated from a client and is being forwarded internally for the first time, false otherwise
- */
-func putReqCacheEntry(id string, msgType uint8, msg []byte, destMemberKey int, addr *net.Addr, returnAddr *net.Addr, isFirstHop bool) {
-	if isFirstHop && msgType != FORWARDED_CLIENT_REQ {
-		panic("isFirstHop can only be true for client requests")
-	}
-
-	reqCache_.lock.Lock()
-	res := resCache_.data.Get(id)
-
-	// Increment retries if it already exists
-	if res != nil {
-		resCacheEntry := res.(ReqCacheEntry)
-		resCacheEntry.retries += 1
-		resCache_.data.Put(id, resCacheEntry)
-
-		// Otherwise add a new entry
-	} else {
-		resCache_.data.Put(id, ReqCacheEntry{msgType, msg, time.Now(), 0, destMemberKey, addr, returnAddr, isFirstHop})
-	}
-	resCache_.lock.Unlock()
-}
-
-/*** END Req Cache Code ***/
-
-/*** START Res Cache Code ***/
-const RES_CACHE_TIMEOUT = 6 // Messages only required to live in cache for 5 seconds
-
-/* Note: the cache has a small cap for now due to the nature of only having a small number
-of clients sending messages. The cache will need to expanded in the future once we have a
-better idea of the likely number of clients and their retry rate. */
-const MAX_RES_CACHE_ENTRIES = 50
-
-// Maps msg ID to serialized response
-var resCache_ *Cache
-
-type ResCacheEntry struct {
-	msg  []byte
-	time time.Time
-}
-
-/**
-* Removes expired entries in the cache every RES_CACHE_TIMEOUT seconds.
- */
-func sweepResCache() {
-	resCache_.lock.Lock()
-	entries := resCache_.data.Entries()
-	for i := 0; i < len(entries); i++ {
-		entry := entries[i]
-		elapsedTime := time.Now().Sub(entry.Value.(ResCacheEntry).time)
-		if elapsedTime.Seconds() > RES_CACHE_TIMEOUT {
-			resCache_.data.Delete(entry.Key)
-		}
-	}
-	resCache_.lock.Unlock()
-	PrintMemStats()
-
-	debug.FreeOSMemory() // Force GO to free unused memory
-}
-
-/**
-* Puts a message in the cache.
-* @param id The message id.
-* @param msg The serialized message to cache.
- */
-func putResCacheEntry(id string, msg []byte) {
-	resCache_.lock.Lock()
-	for resCache_.data.Len() >= MAX_RES_CACHE_ENTRIES {
-		resCache_.data.Pull()
-	}
-	resCache_.data.Put(id, ResCacheEntry{msg: msg, time: time.Now()})
-	resCache_.lock.Unlock()
-}
-
-/*** END Res Cache Code ***/
-
-/**
-* Initializes the request/reply layer. Must be called before using
-* request/reply layer to get expected functionality.
- */
-func requestReplyLayerInit() {
-	/* Set up response cache */
-	resCache_ = NewCache()
-
-	// Sweep cache every RES_CACHE_TIMEOUT seconds
-	var ticker = time.NewTicker(time.Second * RES_CACHE_TIMEOUT)
-
-	go func() {
-		for {
-			<-ticker.C
-			sweepResCache()
-		}
-	}()
-
-	/* Set up request cache */
-	reqCache_ = NewCache()
-
-	// Sweep cache every RES_CACHE_TIMEOUT seconds
-	var ticker2 = time.NewTicker(time.Millisecond * REQ_RETRY_TIMEOUT_MS)
-
-	go func() {
-		for {
-			<-ticker2.C
-			sweepReqCache()
-		}
-	}()
-}
-
-/**
-* Generates a unique 16 byte ID.
-* @param clientIP The client's IP address.
-* @param port Server port number.
-* @return The unique ID as a 16 byte long byte array.
- */
-func getmsgID(clientIP string, port uint16) []byte {
-	ipArr := strings.Split(clientIP, ".")
-	ipBytes := make([]byte, 5)
-	for i, s := range ipArr {
-		val, _ := strconv.Atoi(s)
-		binary.LittleEndian.PutUint16(ipBytes[i:], uint16(val))
-	}
-	ipBytes = ipBytes[0:4]
-
-	portBytes := make([]byte, 2)
-	binary.LittleEndian.PutUint16(portBytes, port)
-	randBytes := make([]byte, 2)
-	rand.Read(randBytes)
-	timeBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(timeBytes, uint64(time.Now().UnixNano()))
-
-	id := append(append(append(ipBytes, portBytes...), randBytes...), timeBytes...)
-	return id
-}
-
-/**
-* Computes the IEEE CRC checksum based on the message ID and message payload.
-* @param msgID The message ID.
-* @param msgPayload The message payload.
-* @return The checksum.
- */
-func computeChecksum(msgID []byte, msgPayload []byte) uint32 {
-	return crc32.ChecksumIEEE(append(msgID, msgPayload...))
-}
-
-/**
-* Computes the IEEE CRC checksum based on the message ID and message payload.
-* @param msg The received message.
-* @return True if message ID matches the expected ID and checksum is valid, false otherwise.
- */
-func verifyChecksum(msg *pb.InternalMsg) bool {
-	// Verify MessageID is as expected
-	if uint64(computeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
-		return false
-	}
-	return true
-}
-
-/**
-* Writes a message to the connection.
-* @param conn The connection object to send the message over.
-* @param addr The IP address to send to.
-* @param msg The message to send.
- */
-func writeMsg(addr net.Addr, msg []byte) {
-	// Send msg
-	_, err := (*conn).WriteTo(msg, addr)
-	if err != nil {
-		log.Println(err)
-	} else {
-		// log.Println("INFO:", n, "bytes written.")
-	}
-}
-
-/**
-* Sends a UDP message responding to a request.
-* @param conn The connection object to send messages over.
-* @param addr The IP address to send to.
-* @param msgID The message id.
-* @param payload The message payload.
- */
-func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal bool) {
-	checksum := computeChecksum(msgID, payload)
-
-	resMsg := &pb.InternalMsg{
-		MessageID: msgID,
-		Payload:   payload,
-		CheckSum:  uint64(checksum),
-	}
-
-	// Specify it is a response if the destination is another server
-	if isInternal {
-		resMsg.IsResponse = true
-	}
-
-	serMsg, err := proto.Marshal(resMsg)
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Cache message
-	putResCacheEntry(string(msgID), serMsg)
-
-	writeMsg(addr, serMsg)
-}
-
-/*
-* Forwards and caches a response.
-* @param conn The connection object to send messages over.
-* @param addr The address to send the message to.
-* @param resMsg The message to send.
-* @param isInternal True if the response is being sent to another server node, false if being sent to a client.
- */
-func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) {
-	// Remove internal fields if forwarding to a client
-	if isInternal == false {
-		resMsg = &pb.InternalMsg{
-			MessageID: resMsg.MessageID,
-			Payload:   resMsg.Payload,
-			CheckSum:  resMsg.CheckSum,
-		}
-	}
-
-	serMsg, err := proto.Marshal(resMsg)
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Cache message
-	putResCacheEntry(string(resMsg.MessageID), serMsg)
-
-	writeMsg(addr, serMsg)
-}
-
-/*
-* Creates, sends and caches a request.
-* @param conn The connection object to send messages over.
-* @param addr The address to send the message to.
-* @param reqMsg The message to send.
- */
-// NOTE: this will be used for sending internal messages
-func sendUDPRequest(addr *net.Addr, port int, destMemberKey int, payload []byte, internalID uint8) {
-	localAddr := strings.Split((*conn).LocalAddr().String(), ":")[0]
-	fmt.Println(localAddr)
-	msgID := getmsgID(localAddr, uint16(port))
-
-	checksum := computeChecksum(msgID, payload)
-
-	reqMsg := &pb.InternalMsg{
-		MessageID:  msgID,
-		Payload:    payload,
-		CheckSum:   uint64(checksum),
-		InternalID: uint32(internalID),
-		IsResponse: false,
-	}
-
-	serMsg, err := proto.Marshal(reqMsg)
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Add to request cache
-	putReqCacheEntry(string(msgID), internalID, serMsg, destMemberKey, addr, nil, false)
-
-	writeMsg(*addr, serMsg)
-}
-
-/*
-* Forwards and caches the request
-* @param conn The connection object to send messages over.
-* @param addr The address to send the message to.
-* @param returnAddr The address to forward the response to, nil if the response shouldn't be forwarded.
-* @param reqMsg The message to send.
- */
-func forwardUDPRequest(addr *net.Addr, destMemberKey int, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
-	isFirstHop := false
-
-	// Update ID if we are forwarding an external request
-	if reqMsg.InternalID == EXTERNAL_REQUEST {
-		reqMsg.InternalID = FORWARDED_CLIENT_REQ
-		isFirstHop = true
-	}
-
-	serMsg, err := proto.Marshal(reqMsg)
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Add to request cache
-	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
-		// No need to cache serialized message if is a client request since client responsible for retries
-		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), nil, destMemberKey, addr, returnAddr, isFirstHop)
-	} else {
-		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), serMsg, destMemberKey, addr, returnAddr, isFirstHop)
-	}
-
-	writeMsg(*addr, serMsg)
-}
-
-/**
-* Processes a request message and either forwards it or handles it at this node.
-* @param conn The connection object to send messages over.
-* @param returnAddr The IP address to send response to.
-* @param reqMsg The incoming message.
-* @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
- */
-func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg, externalReqHandler func([]byte) ([]byte, error)) {
-	// Check if response is already cached
-	resCache_.lock.Lock()
-	res := resCache_.data.Get(string(reqMsg.MessageID))
-	if res != nil {
-		resCacheEntry := res.(ResCacheEntry)
-		writeMsg(returnAddr, resCacheEntry.msg)
-		// Reset timeout
-		resCacheEntry.time = time.Now()
-		resCache_.data.Put(string(reqMsg.MessageID), resCacheEntry) // TODO: does this overwrite?
-		resCache_.lock.Unlock()
-		return
-	}
-	resCache_.lock.Unlock()
-
-	// Determine if an internal or external message
-	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
-		// TODO: pass handler as arg?
-
-		// Membership service is reponsible for sending response or forwarding the request
-		// TODO: internalReqHandler(conn, returnAddr, reqMsg)
-	} else {
-		// TODO: determine if the key corresponds to this node
-		// var addr *net.Addr = nil
-
-		// TODO: If key corresponds to this node:
-		// Pass message to handler
-		payload, err := externalReqHandler(reqMsg.Payload)
-		if err != nil {
-			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
-			return
-		}
-		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
-
-		// TODO: If key doesn't correspond to this node:
-		// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
-	}
-
-}
-
-/**
-* Processes a response message.
-* @param conn The connection object to send messages over.
-* @param addr The IP address to send response to.
-* @param serialMsg The incoming message.
-* @param handler The message handler callback.
- */
-func processResponse(resMsg *pb.InternalMsg) {
-	// Get cached request (ignore if it's not cached)
-	reqCache_.lock.Lock()
-	req := reqCache_.data.Get(string(resMsg.MessageID))
-	if req != nil {
-		reqCacheEntry := req.(ReqCacheEntry)
-
-		// If cached request has return address, forward the request
-		if reqCacheEntry.returnAddr != nil {
-			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
-		}
-
-		// Otherwise simply remove the message from the queue
-		// Note: We don't need any response handlers for now
-		// TODO: what about for TRANSFER_FINISHED and MEMBERSHIP_REQUEST?
-		reqCache_.data.Delete(resMsg.MessageID)
-
-	} else {
-		log.Println("WARN: Received response for unknown request")
-	}
-	reqCache_.lock.Unlock()
-}
-
-/**
-* Listens for incoming messages, processes them, and then passes them to the handler callback.
-* @param conn The network connection object.
-* @param externalReqHandler The external request handler callback.
-* @return An error message if failed to read from the connection.
- */
-func msgListener(externalReqHandler func([]byte) ([]byte, error) /*, resHandler func([]byte) ([]byte, error)*/) error {
-	buffer := make([]byte, MAX_BUFFER_SIZE)
-
-	// Listen for packets
-	for {
-		//log.Println("Awaiting packet")
-		n, returnAddr, err := (*conn).ReadFrom(buffer)
-		if err != nil {
-			return err
-		}
-
-		// Deserialize message
-		msg := &pb.InternalMsg{}
-		err = proto.Unmarshal(buffer[0:n], msg)
-		if err != nil {
-			// Disregard messages with invalid format
-			log.Println("WARN msg with invalid format. Sender = " + returnAddr.String())
-		}
-
-		// Verify checksum
-		if !verifyChecksum(msg) {
-			// Disregard messages with invalid checksums
-			log.Println("WARN checksum mismatch. Sender = " + returnAddr.String())
-			continue
-		}
-
-		if msg.IsResponse {
-			go processResponse(msg)
-		} else {
-			go processRequest(returnAddr, msg, externalReqHandler)
-		}
-	}
-}
 
 /***** GOSSIP PROTOCOL *****/
 
@@ -660,11 +92,34 @@ func tickHeartbeat() {
 	memberStore_.lock.Unlock()
 }
 
+// Source: Sathish's campuswire post #310, slightly modified
+func GetOutboundAddress() net.Addr {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr()
+
+	return localAddr
+}
+
 // TOM
 // TASK3 (part 1): Membership protocol (bootstrapping process)
 func makeMembershipReq() {
 	// Send request to random node (from list of nodes)
+	randMember := getRandMember()
+	randMemberAddr := util.CreateAddressString(randMember.ip, randMember.port)
+	localAddr := GetOutboundAddress()
+	localAddrStr := localAddr.String()
+	reqPayload := []byte(localAddrStr)
 
+	udpAddr, _ := net.ResolveUDPAddr("udp", randMemberAddr)
+	var addr net.Addr = udpAddr
+	sendUDPRequest(&addr, 1, randMember.key, reqPayload, MEMBERSHIP_REQUEST)
+
+	// TODO: This comment below
 	// Repeat this request periodically until receive TRANSFER_FINISHED message
 	// to protect against nodes failing (this will probably be more important for later milestones)
 }
@@ -680,16 +135,37 @@ func gossipHeartbeat() {
 // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
 // The actual transfer from the succesor to the predecessor
 // Send a TRANSFER_FINISHED when it's done
-func transferToPredecessor( /* predecessor key */ ) {
+func transferToPredecessor(addr net.Addr, targetKey int /* predecessor key */) { // Did this so there wouldn't be an error
 	// Send all key-value pairs that is the responsibility of the predecessor
 	// Use PUT requests (like an external client)
 }
 
 // TOM
 // TASK3 (part 2): Membership protocol
+/**
+@param addr the address that sent the message
+@param InternalMsg the internal message being sent
+*/
 func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Find successor node and forward the
 	// membership request there to start the transfer
+
+	ipStr, portStr := util.GetIPPort(string(msg.Payload))
+	targetKey := util.GetNodeKey(ipStr, portStr)
+	nodeIsSuccessor, err := isSuccessor(targetKey)
+	if err != nil {
+		log.Println("Error finding successor") // TODO actually handle error
+	}
+	if nodeIsSuccessor {
+		go transferToPredecessor(addr, targetKey) // TODO Not sure about how to call this.
+	} else {
+		targetNodePosition := searchForSuccessor(targetKey)
+		targetMember := memberStore_.members[targetNodePosition]
+		targetMemberAddr := util.CreateAddressString(targetMember.ip, targetMember.port)
+		udpAddr, _ := net.ResolveUDPAddr("udp", targetMemberAddr)
+		var addr net.Addr = udpAddr
+		forwardUDPRequest(&addr, targetMember.key, nil, msg) // TODO Don't know about return addr param
+	}
 
 	// If this node is the successor, start transferring keys
 
@@ -725,6 +201,7 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 // TOM + Shay
 // TASK3 (part 4): Membership protocol - transfer to this node is finished
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
+	memberStore_.members[memberStore_.position].status = STATUS_NORMAL
 	// End timer and set status to "Normal"
 	// Nodes will now start sending requests directly to us rather than to our successor.
 }
@@ -751,10 +228,10 @@ func bootstrap(conn *net.PacketConn, otherMembers []struct {
 }, port int) {
 	memberStore_ = NewMemberStore()
 
-	// TODO: problem with not being able to know your own IP?
+	curIP := GetOutboundAddress().(*net.UDPAddr).IP
+	curPort := GetOutboundAddress().(*net.UDPAddr).Port
 
-	// TODO: Get Key here
-	key_ = rand.Intn(100)
+	key_ = util.GetNodeKey(string(curIP), strconv.Itoa(curPort))
 
 	var status int
 	if len(otherMembers) == 0 {

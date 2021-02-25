@@ -1,4 +1,23 @@
 /************* REQUEST/REPLY PROTOCOL CODE *************/
+package main
+
+import (
+	"encoding/binary"
+	"fmt"
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	maps "github.com/ross-oreto/go-list-map"
+	"google.golang.org/protobuf/proto"
+	"hash/crc32"
+	"log"
+	"math/rand"
+	"net"
+	"runtime/debug"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
