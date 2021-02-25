@@ -2,12 +2,10 @@ package main
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"log"
 	"math/rand"
 	"net"
-	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -31,6 +29,9 @@ const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
 const FORWARDED_CLIENT_REQ = 0x4
 const PING = 0x5
+const TRANSFER_REQ = 0x5
+
+// Only receive transfer request during bootstrapping
 
 const INTERNAL_REQ_RETRIES = 1
 
@@ -85,6 +86,10 @@ func sweepReqCache() {
 	entries := reqCache_.data.Entries()
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
+		// log.Println(entry.Key)
+		// log.Println(entry.Value)
+		// time.Sleep(2 * time.Second)
+
 		reqCacheEntry := entry.Value.(ReqCacheEntry)
 		elapsedTime := time.Now().Sub(reqCacheEntry.time)
 
@@ -146,11 +151,14 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 	} else if !isClientReq {
 		// Retry internal requests up to INTERNAL_REQ_RETRIES times
 		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES {
+			log.Println("RE-SENDING MSG")
+
 			reSendMsg(key, reqCacheEntry)
 
 			// Handle expired internal requests
 		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
 			if reqCacheEntry.msgType == PING {
+				log.Println("PING TIMED OUT")
 				// TODO: set member's status to unavailable if it's a ping message
 				//   - Add function to call here in gossip/membership service
 
@@ -185,7 +193,7 @@ func reSendMsg(key string, reqCacheEntry *ReqCacheEntry) {
 	// Update num retries in
 	reqCacheEntry.retries += 1
 	reqCacheEntry.time = time.Now()
-	reqCache_.data.Put(string(key), reqCacheEntry.retries)
+	reqCache_.data.Put(string(key), *reqCacheEntry)
 }
 
 /**
@@ -203,19 +211,19 @@ func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, retu
 	}
 
 	reqCache_.lock.Lock()
-	res := resCache_.data.Get(id)
+	req := reqCache_.data.Get(id)
 
 	// Increment retries if it already exists
-	if res != nil {
-		resCacheEntry := res.(ReqCacheEntry)
-		resCacheEntry.retries += 1
-		resCache_.data.Put(id, resCacheEntry)
+	if req != nil {
+		reqCacheEntry := req.(ReqCacheEntry)
+		reqCacheEntry.retries += 1
+		reqCache_.data.Put(id, reqCacheEntry)
 
 		// Otherwise add a new entry
 	} else {
-		resCache_.data.Put(id, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
+		reqCache_.data.Put(id, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
 	}
-	resCache_.lock.Unlock()
+	reqCache_.lock.Unlock()
 }
 
 /*** END Req Cache Code ***/
@@ -465,6 +473,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg, externalReqHandler func([]byte) ([]byte, error)) {
+	log.Println("Received Request of type ", strconv.Itoa(int(reqMsg.InternalID)))
 	// Check if response is already cached
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
@@ -485,6 +494,9 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg, externalReqHand
 
 		// Membership service is reponsible for sending response or forwarding the request
 		// TODO: internalReqHandler(conn, returnAddr, reqMsg)
+
+		// FOR TESTING:
+		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
 	} else {
 		// TODO: determine if the key corresponds to this node
 		// var addr *net.Addr = nil
@@ -513,6 +525,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg, externalReqHand
 * @param handler The message handler callback.
  */
 func processResponse(resMsg *pb.InternalMsg) {
+	log.Println("Received response")
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
 	req := reqCache_.data.Get(string(resMsg.MessageID))
@@ -524,12 +537,14 @@ func processResponse(resMsg *pb.InternalMsg) {
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		}
 
+		log.Println("Recieved response")
+
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
 
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
 		// TODO: what about for TRANSFER_FINISHED and MEMBERSHIP_REQUEST?
-		reqCache_.data.Delete(resMsg.MessageID)
+		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
 		log.Println("WARN: Received response for unknown request")
@@ -545,13 +560,22 @@ func processResponse(resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func SendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
-	splitAddr := strings.Split((*conn).LocalAddr().String(), ":")
-	localAddr := splitAddr[0]
-	port, _ := strconv.Atoi(splitAddr[1])
-	log.Println(localAddr)
-	log.Println(port)
+	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
+	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
-	msgID := getmsgID(localAddr, uint16(port))
+	// // splitAddr := strings.Split((*conn).LocalAddr().String(), ":")
+	// // localAddr := splitAddr[0]
+	// port, err := strconv.Atoi(splitAddr[1])
+	// if err != nil {
+	// 	log.Println("ERROR: Could not parse port number")
+	// }
+	// log.Println((*conn).LocalAddr().String())
+	// log.Println("IP: ")
+	// log.Println(ip)
+	// log.Println("Port: ")
+	// log.Println(port)
+
+	msgID := getmsgID(ip, uint16(port))
 
 	checksum := computeChecksum(msgID, payload)
 
@@ -567,6 +591,8 @@ func SendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	if err != nil {
 		log.Println(err)
 	}
+
+	// TODO:
 
 	// Add to request cache
 	putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
@@ -614,42 +640,86 @@ func MsgListener(externalReqHandler func([]byte) ([]byte, error) /*, resHandler 
 	}
 }
 
-/**
-* Prints the process' memory statistics.
-* Source: https://golangcode.com/print-the-current-memory-usage/
- */
-func PrintMemStats() {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	log.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-	log.Printf("\t Stack = %v\n", bToMb(m.StackSys))
-	log.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-	log.Printf("\tSys = %v MiB", bToMb(m.Sys))
-	log.Printf("\tNum GC cycles = %v\n", m.NumGC)
-}
+/* TESTING CODE */
 
-/**
-* Converts bytes to megabytes.
-* @param b The byte amount.
-* @return The corresponding MB amount.
-* Source: https://golangcode.com/print-the-current-memory-usage/
- */
-func bToMb(b uint64) uint64 {
-	return b / 1024 / 1024
-}
+// /**
+// * Prints the process' memory statistics.
+// * Source: https://golangcode.com/print-the-current-memory-usage/
+//  */
+// func PrintMemStats() {
+// 	var m runtime.MemStats
+// 	runtime.ReadMemStats(&m)
+// 	log.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+// 	log.Printf("\t Stack = %v\n", bToMb(m.StackSys))
+// 	log.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+// 	log.Printf("\tSys = %v MiB", bToMb(m.Sys))
+// 	log.Printf("\tNum GC cycles = %v\n", m.NumGC)
+// }
 
-func main() {
+// /**
+// * Converts bytes to megabytes.
+// * @param b The byte amount.
+// * @return The corresponding MB amount.
+// * Source: https://golangcode.com/print-the-current-memory-usage/
+//  */
+// func bToMb(b uint64) uint64 {
+// 	return b / 1024 / 1024
+// }
 
-	requestReplyLayerInit()
+// func main() {
 
-	MsgListener(func([]byte) ([]byte, error) { return nil, nil })
+// 	// Parse cmd line args
+// 	arguments := os.Args
+// 	if len(arguments) != 3 {
+// 		fmt.Printf("ERROR: Expecting 2 arguments (received %d): Port #, Port #", len(arguments)-1)
+// 		return
+// 	}
 
-	udpAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:44222")
+// 	port1, err := strconv.Atoi(arguments[1])
+// 	if err != nil {
+// 		fmt.Println("ERROR: Port is not a valid number")
+// 		return
+// 	}
 
-	var addr net.Addr = udpAddr
+// 	if port1 < 1 || port1 > 65535 {
+// 		fmt.Println("ERROR: Invalid port number (must be between 1 and 65535)")
+// 		return
+// 	}
 
-	/* TESTS */
-	SendUDPRequest(addr*net.Addr, nil, PING)
+// 	port2, err := strconv.Atoi(arguments[2])
+// 	if err != nil {
+// 		fmt.Println("ERROR: Port is not a valid number")
+// 		return
+// 	}
 
-	fmt.Println("Server closed")
-}
+// 	if port2 < 1 || port2 > 65535 {
+// 		fmt.Println("ERROR: Invalid port number (must be between 1 and 65535)")
+// 		return
+// 	}
+
+// 	requestReplyLayerInit()
+
+// 	// Listen on all available IP addresses
+// 	connection, err := net.ListenPacket("udp", ":"+strconv.Itoa(port1))
+// 	if err != nil {
+// 		return
+// 	}
+// 	defer connection.Close()
+
+// 	conn = &connection
+
+// 	go MsgListener(func([]byte) ([]byte, error) { return nil, nil })
+
+// 	udpAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:"+strconv.Itoa(port2))
+
+// 	var sendAddr net.Addr = udpAddr
+
+// 	for {
+// 		/* TESTS */
+// 		time.Sleep(2 * time.Second)
+// 		SendUDPRequest(&sendAddr, nil, PING)
+// 	}
+
+// 	log.Println("Server closed")
+
+// }
