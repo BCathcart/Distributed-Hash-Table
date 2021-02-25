@@ -1,14 +1,15 @@
-FROM --platform=${BUILDPLATFORM} golang:1.15 AS build
-WORKDIR /${HOME}/cpen431/miniproject
+FROM golang:1.15.6-alpine AS build
+WORKDIR /src
 ENV CGO_ENGABLED=0
-COPY go.* .
+COPY go.* ./
 RUN go mod download
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/server ./src/server 
+RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=readonly -o /out/dht-server ./src/server
 
-FROM scratch AS bin
-COPY --from=build /out/server /
-ENTRYPOINT [ "/out/server" ]
-CMD ["--help"]
+FROM alpine AS bin
+ENV GOTRACEBACK=single
+WORKDIR /src
+COPY --from=build /out/dht-server /
+ENTRYPOINT [ "/dht-server" ]

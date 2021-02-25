@@ -1,11 +1,11 @@
-all: bin/server
+NAME = server${NUMBER}
 
-PLATFORM=local
+.PHONY: build
 
-.PHONY: bin/server
-bin/server:
-	@docker build . --target bin \
-	--output bin/ \
-	--platform ${PLATFORM} \
-	--memory 128m \
-	--memory-swap 128m
+build:
+	@docker build -t cpen431 --target bin .
+run:
+	@docker run -it --rm -p 8000:3000 \
+	--memory=128m --memory-swap=128m \
+	--name ${NAME} \
+	cpen431 ${PORT}

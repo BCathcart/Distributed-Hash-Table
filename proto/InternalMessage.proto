@@ -1,0 +1,11 @@
+syntax = "proto3";
+package protobuf;
+option go_package = "pb/protobuf";
+
+message InternalMsg {
+    bytes messageID = 1;
+    bytes payload = 2;
+    fixed64 checkSum = 3;
+    uint32 internalID = 4;
+    bool isResponse = 5;
+}
