@@ -3,21 +3,18 @@ package kvstore
 import (
 	"container/list"
 	"log"
-	"strings"
 	"sync"
 )
 
 /* KEY VALUE STORE */
-
-var kvStoreSize_ uint32
-
 type KVStore struct {
 	lock sync.RWMutex
 	data *list.List
+	size uint32
 }
 
-type KVEntry struct {
-	key string
+type kventry struct {
+	key uint32
 	val []byte
 	ver int32
 }
@@ -39,23 +36,23 @@ func NewKVStore() *KVStore {
 * @param version The key-value pair version number.
 * @return OK if there is space, NO_SPACE if the store is full.
  */
-func (kvStore_ *KVStore) Put(key string, val []byte, version int32) uint32 {
-	kvStore_.lock.Lock()
+func (kvs *KVStore) Put(key uint32, val []byte, version int32) uint32 {
+	kvs.lock.Lock()
 
 	// Remove needed to decrement kvStoreSize_ if key already exists
-	kvStore_.Remove(key) // *neeeds to be in critical section
+	kvs.Remove(key) // *neeeds to be in critical section
 
 	// Check if the store is full
-	if kvStoreSize_ > MAX_KV_STORE_SIZE {
-		kvStore_.lock.Unlock()
+	if kvs.size > MAX_KV_STORE_SIZE {
+		kvs.lock.Unlock()
 		return NO_SPACE
 	}
 
-	kvStore_.data.PushBack(KVEntry{key: key, val: val, ver: version})
-	kvStoreSize_ += uint32(len(key) + len(val) + 4) // Increase kv store size
-	kvStore_.lock.Unlock()                          // TODO: this caused fatal error???
+	kvs.data.PushBack(kventry{key: key, val: val, ver: version})
+	kvs.size += uint32(4 + len(val) + 4) // Increase kv store size
 
-	log.Println(kvStoreSize_)
+	log.Println(kvs.size)
+	kvs.lock.Unlock() // TODO: this caused fatal error???
 
 	return OK
 }
@@ -63,27 +60,28 @@ func (kvStore_ *KVStore) Put(key string, val []byte, version int32) uint32 {
 /**
 * Gets an entry from the key-value store.
 * @param key The key of the entry to retrieve.
-* @return The KVEntry if it exists.
+* @return The kventry value if it exists.
+* @return The kventry version if it exists.
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
-func (kvStore_ *KVStore) Get(key string) (KVEntry, uint32) {
+func (kvs *KVStore) Get(key uint32) ([]byte, int32, uint32) {
 	var found bool
-	var entry KVEntry
-	kvStore_.lock.RLock()
-	res := kvStore_.findListElem(key)
+	var entry kventry
+	kvs.lock.RLock()
+	res := kvs.findListElem(key)
 	if res != nil {
 		found = true
 		entry = *res
 	} else {
 		found = false
 	}
-	kvStore_.lock.RUnlock()
+	kvs.lock.RUnlock()
 
 	if found {
-		return entry, OK
-	} else {
-		return KVEntry{}, NOT_FOUND
+		return entry.val, entry.ver, OK
 	}
+
+	return nil, 0, NOT_FOUND
 }
 
 /**
@@ -91,19 +89,39 @@ func (kvStore_ *KVStore) Get(key string) (KVEntry, uint32) {
 * @param key The key of the entry to remove.
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
-func (kvStore_ *KVStore) Remove(key string) uint32 {
-	success, n := kvStore_.removeListElem(key)
+func (kvs *KVStore) Remove(key uint32) uint32 {
+	kvs.lock.Lock()
+	success, n := kvs.removeListElem(key)
 	if success == true {
-		kvStoreSize_ -= uint32(n) // Decrease kv store size
+		kvs.size -= uint32(n) // Decrease kv store size
 	}
 
-	log.Println(kvStoreSize_)
+	log.Println(kvs.size)
+	kvs.lock.RUnlock()
 
 	if success == true {
 		return OK
-	} else {
-		return NOT_FOUND
 	}
+
+	return NOT_FOUND
+}
+
+/**
+* * @return the size of the KVStore
+ */
+func (kvs *KVStore) GetSize() uint32 {
+	return kvs.size
+}
+
+/**
+* * Wipes out the entire KVStore
+ */
+func (kvs *KVStore) Wipeout() {
+	kvs.lock.Lock()
+	kvs.data.Init() // Clears the list
+	kvs.size = 0
+	kvs.lock.Unlock()
+
 }
 
 /**
@@ -111,10 +129,10 @@ func (kvStore_ *KVStore) Remove(key string) uint32 {
 * @param key The key to search for.
 * @return The KVEntry if it exists, nil otherwise.
  */
-func (kvStore_ *KVStore) findListElem(key string) *KVEntry {
-	for e := kvStore_.data.Front(); e != nil; e = e.Next() {
-		if strings.Compare(e.Value.(KVEntry).key, key) == 0 {
-			entry := e.Value.(KVEntry)
+func (kvs *KVStore) findListElem(key uint32) *kventry {
+	for e := kvs.data.Front(); e != nil; e = e.Next() {
+		if e.Value.(kventry).key == key {
+			entry := e.Value.(kventry)
 			return &entry
 		}
 	}
@@ -126,11 +144,11 @@ func (kvStore_ *KVStore) findListElem(key string) *KVEntry {
 * @param key The key of the entry to remove.
 * @return The KVEntry if it exists, nil otherwise.
  */
-func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
-	for e := kvStore_.data.Front(); e != nil; e = e.Next() {
-		if strings.Compare(e.Value.(KVEntry).key, key) == 0 {
-			len := len(e.Value.(KVEntry).key) + len(e.Value.(KVEntry).val) + 4
-			kvStore_.data.Remove(e)
+func (kvs *KVStore) removeListElem(key uint32) (bool, int) {
+	for e := kvs.data.Front(); e != nil; e = e.Next() {
+		if e.Value.(kventry).key == key {
+			len := 4 + len(e.Value.(kventry).val) + 4
+			kvs.data.Remove(e)
 			return true, len
 		}
 	}

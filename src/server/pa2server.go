@@ -33,7 +33,6 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	requestreply.RequestReplyLayerInit(&connection)
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
 
-	// Pass the
 	err = requestreply.MsgListener(kvstore.RequestHandler, membership.InternalMsgHandler)
 
 	// Should never get here if everything is working

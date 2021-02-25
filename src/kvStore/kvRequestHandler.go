@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"encoding/binary"
 	"log"
 	"os"
 	"runtime"
@@ -97,7 +98,8 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 	}
 
 	cmd := kvRequest.Command
-	key := string(kvRequest.Key)
+	reqKey := kvRequest.Key
+	key := binary.BigEndian.Uint32(kvRequest.Key) //TODO: Key will be string
 	value := kvRequest.Value
 	var version int32
 	if kvRequest.Version != nil {
@@ -109,7 +111,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 	// Determine action based on the command
 	switch cmd {
 	case PUT:
-		if len(key) > MAX_KEY_LEN {
+		if len(reqKey) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else if len(value) > MAX_VAL_LEN {
 			errCode = INVALID_VAL
@@ -121,38 +123,35 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		}
 
 	case GET:
-		if len(key) > MAX_KEY_LEN {
+		if len(reqKey) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else if memUsage() > MAX_MEM_USAGE {
 			kvRes = handleOverload()
 			errCode = OVERLOAD
 		} else {
-			entry, code := kvStore_.Get(key)
+			value, version, code := kvStore_.Get(key)
 			if code == OK {
-				kvRes.Value = entry.val
-				kvRes.Version = &entry.ver
+				kvRes.Value = value
+				kvRes.Version = &version
 			}
 
 			errCode = code
 		}
 
 	case REMOVE:
-		if len(key) > MAX_KEY_LEN {
+		if len(reqKey) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
-			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
-			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
 		os.Exit(1)
 
 	case WIPEOUT:
-		kvStore_.data.Init() // Clears the list
+		kvStore_.Wipeout()
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
-		kvStoreSize_ = 0
 
 	case IS_ALIVE:
 		errCode = OK

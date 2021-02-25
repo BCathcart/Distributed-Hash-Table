@@ -27,7 +27,7 @@ const HEARTBEAT_INTERVAL = 1000 // ms
 
 // Maps msg ID to serialized response
 var memberStore_ *MemberStore
-var key_ int32
+var key_ uint32
 
 /*
 * Updates the heartbeat by one.
@@ -51,9 +51,9 @@ func makeMembershipReq() {
 // TASK4 (part 1): Gossip heartbeat (send the entire member array in the MemberStore).
 func gossipHeartbeat() {
 	// Package MemberStore.members array
-	members := &pb.GossipMessage{}
+	members := &pb.Members{}
 	memberStore_.lock.RLock()
-	members.Members = make([]*pb.GossipMessage_Member, len(memberStore_.members))
+	members.Members = make([]*pb.Member, len(memberStore_.members))
 	for i, member := range memberStore_.members {
 		members.Members[i] = member
 	}
@@ -91,7 +91,7 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 	//assume the incoming member list is in the correct order so no need to
 	//reorder it?
 
-	gossipMsg := &pb.GossipMessage{}
+	gossipMsg := &pb.Members{}
 	err := proto.Unmarshal(payload, gossipMsg)
 	if err != nil {
 		log.Println("WARN heartbeat message with invalid format")
@@ -177,7 +177,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	memberStore_ = NewMemberStore()
 
 	// TODO: Get Key here
-	key_ = int32(rand.Intn(100))
+	key_ = uint32(rand.Intn(100))
 
 	var status int32
 	if len(otherMembers) == 0 {
@@ -187,7 +187,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	}
 
 	// Add this node to Member array
-	memberStore_.members = append(memberStore_.members, &pb.GossipMessage_Member{Ip: []byte(ip), Port: port, Key: key_, Heartbeat: 0, Status: status})
+	memberStore_.members = append(memberStore_.members, &pb.Member{Ip: []byte(ip), Port: port, Key: key_, Heartbeat: 0, Status: status})
 	memberStore_.position = 0
 
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds

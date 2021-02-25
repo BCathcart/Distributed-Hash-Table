@@ -10,7 +10,7 @@ import (
 
 type MemberStore struct {
 	lock     sync.RWMutex
-	members  []*pb.GossipMessage_Member
+	members  []*pb.Member
 	position int
 }
 
@@ -49,7 +49,7 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 	log.Println("Error: could not find own key in member array")
 }
 
-func (ms *MemberStore) findKeyIndex(key int32) int {
+func (ms *MemberStore) findKeyIndex(key uint32) int {
 	for i := range ms.members {
 		if ms.members[i].Key == key {
 			return i
