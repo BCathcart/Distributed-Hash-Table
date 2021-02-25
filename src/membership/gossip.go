@@ -94,7 +94,7 @@ func gossipHeartbeat() {
 		randi = rand.Intn(len(memberStore_.members))
 	}
 	randMember := memberStore_.members[randi]
-	err = requestreply.SendGossipMessage(gspPayload, string(randMember.GetIp()), int(randMember.GetPort()))
+	err = requestreply.SendHeartbeatMessage(gspPayload, string(randMember.GetIp()), int(randMember.GetPort()))
 	if err != nil {
 		//corrupted ip addr/port
 		//TODO: discard member from members list?
@@ -104,7 +104,7 @@ func gossipHeartbeat() {
 // Rozhan
 // TASK4 (part 2): Compare incoming member array with current member array and
 // update entries to the one with the larger heartbeat (i.e. newer gossip)
-func heartbeatHandler(addr net.Addr, payload []byte) {
+func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Compare Members list and update as necessary
 	// Need to ignore any statuses of "Unavailable" (or just don't send them)
 	// since failure detection is local.
@@ -115,6 +115,7 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 
 	//assume the incoming member list is in the correct order so no need to
 	//reorder it?
+	payload := msg.GetPayload()
 
 	gossipMsg := &pb.Members{}
 	err := proto.Unmarshal(payload, gossipMsg)
@@ -142,6 +143,7 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	requestreply.SendHeatbeatRespose(addr, msg.MessageID)
 }
 
 // Shay
@@ -210,7 +212,7 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 		membershipReqHandler(addr, msg)
 
 	case HEARTBEAT:
-		go heartbeatHandler(addr, msg.GetPayload())
+		go heartbeatHandler(addr, msg)
 
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)

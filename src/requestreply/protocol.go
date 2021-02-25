@@ -320,7 +320,7 @@ func processResponse(resMsg *pb.InternalMsg) {
 	reqCache_.lock.Unlock()
 }
 
-func SendGossipMessage(payload []byte, ip string, port int) error {
+func SendHeartbeatMessage(payload []byte, ip string, port int) error {
 	addr := ip + ":" + strconv.Itoa(port)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -330,6 +330,11 @@ func SendGossipMessage(payload []byte, ip string, port int) error {
 	var netAddr net.Addr = udpAddr
 	sendUDPRequest(&netAddr, payload, HEARTBEAT)
 	return nil
+}
+
+func SendHeatbeatRespose(addr net.Addr, messageID []byte) {
+	sendUDPResponse(addr, messageID, nil, true)
+	//TODO: nil payload will not cause issues?
 }
 
 /*
@@ -361,7 +366,9 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	// Add to request cache
-	putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
+	if internalID != MEMBERSHIP_REQUEST {
+		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
+	}
 
 	writeMsg(*addr, serMsg)
 }
@@ -375,6 +382,18 @@ func SendMembershipMessage(payload []byte, ip string, port int) error {
 	}
 	var netAddr net.Addr = udpAddr
 	sendUDPRequest(&netAddr, payload, MEMBERSHIP_REQUEST)
+	return nil
+}
+
+func SendTransferMessage(payload []byte, ip string, port int) error {
+	addr := ip + ":" + strconv.Itoa(port)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		log.Println("WARN Could not resolve member UDP addr")
+		return err
+	}
+	var netAddr net.Addr = udpAddr
+	sendUDPRequest(&netAddr, payload, TRANSFER_REQ)
 	return nil
 }
 
