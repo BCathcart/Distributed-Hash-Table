@@ -23,7 +23,7 @@ const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
 const FORWARDED_CLIENT_REQ = 0x4
 const PING = 0x5
-const TRANSFER_REQ = 0x5
+const TRANSFER_REQ = 0x6
 
 // Only receive transfer request during bootstrapping
 
@@ -394,6 +394,18 @@ func SendTransferMessage(payload []byte, ip string, port int) error {
 	}
 	var netAddr net.Addr = udpAddr
 	sendUDPRequest(&netAddr, payload, TRANSFER_REQ)
+	return nil
+}
+
+func SendPingRequest(ip string, port int) error {
+	addr := ip + ":" + strconv.Itoa(port)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		log.Println("WARN Could not resolve member UDP addr")
+		return err
+	}
+	var netAddr net.Addr = udpAddr
+	sendUDPRequest(&netAddr, nil, PING)
 	return nil
 }
 
