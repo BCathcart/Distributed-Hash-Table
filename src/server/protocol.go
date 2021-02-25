@@ -580,8 +580,6 @@ func SendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 		log.Println(err)
 	}
 
-	// TODO:
-
 	// Add to request cache
 	putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 
