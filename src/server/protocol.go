@@ -563,18 +563,6 @@ func SendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
-	// // splitAddr := strings.Split((*conn).LocalAddr().String(), ":")
-	// // localAddr := splitAddr[0]
-	// port, err := strconv.Atoi(splitAddr[1])
-	// if err != nil {
-	// 	log.Println("ERROR: Could not parse port number")
-	// }
-	// log.Println((*conn).LocalAddr().String())
-	// log.Println("IP: ")
-	// log.Println(ip)
-	// log.Println("Port: ")
-	// log.Println(port)
-
 	msgID := getmsgID(ip, uint16(port))
 
 	checksum := computeChecksum(msgID, payload)
@@ -639,87 +627,3 @@ func MsgListener(externalReqHandler func([]byte) ([]byte, error) /*, resHandler 
 		}
 	}
 }
-
-/* TESTING CODE */
-
-// /**
-// * Prints the process' memory statistics.
-// * Source: https://golangcode.com/print-the-current-memory-usage/
-//  */
-// func PrintMemStats() {
-// 	var m runtime.MemStats
-// 	runtime.ReadMemStats(&m)
-// 	log.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-// 	log.Printf("\t Stack = %v\n", bToMb(m.StackSys))
-// 	log.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-// 	log.Printf("\tSys = %v MiB", bToMb(m.Sys))
-// 	log.Printf("\tNum GC cycles = %v\n", m.NumGC)
-// }
-
-// /**
-// * Converts bytes to megabytes.
-// * @param b The byte amount.
-// * @return The corresponding MB amount.
-// * Source: https://golangcode.com/print-the-current-memory-usage/
-//  */
-// func bToMb(b uint64) uint64 {
-// 	return b / 1024 / 1024
-// }
-
-// func main() {
-
-// 	// Parse cmd line args
-// 	arguments := os.Args
-// 	if len(arguments) != 3 {
-// 		fmt.Printf("ERROR: Expecting 2 arguments (received %d): Port #, Port #", len(arguments)-1)
-// 		return
-// 	}
-
-// 	port1, err := strconv.Atoi(arguments[1])
-// 	if err != nil {
-// 		fmt.Println("ERROR: Port is not a valid number")
-// 		return
-// 	}
-
-// 	if port1 < 1 || port1 > 65535 {
-// 		fmt.Println("ERROR: Invalid port number (must be between 1 and 65535)")
-// 		return
-// 	}
-
-// 	port2, err := strconv.Atoi(arguments[2])
-// 	if err != nil {
-// 		fmt.Println("ERROR: Port is not a valid number")
-// 		return
-// 	}
-
-// 	if port2 < 1 || port2 > 65535 {
-// 		fmt.Println("ERROR: Invalid port number (must be between 1 and 65535)")
-// 		return
-// 	}
-
-// 	requestReplyLayerInit()
-
-// 	// Listen on all available IP addresses
-// 	connection, err := net.ListenPacket("udp", ":"+strconv.Itoa(port1))
-// 	if err != nil {
-// 		return
-// 	}
-// 	defer connection.Close()
-
-// 	conn = &connection
-
-// 	go MsgListener(func([]byte) ([]byte, error) { return nil, nil })
-
-// 	udpAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:"+strconv.Itoa(port2))
-
-// 	var sendAddr net.Addr = udpAddr
-
-// 	for {
-// 		/* TESTS */
-// 		time.Sleep(2 * time.Second)
-// 		SendUDPRequest(&sendAddr, nil, PING)
-// 	}
-
-// 	log.Println("Server closed")
-
-// }
