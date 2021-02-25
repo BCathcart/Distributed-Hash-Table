@@ -1,7 +1,8 @@
-package main
+package membership
 
 import (
 	"errors"
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"math/rand"
 )
 
@@ -10,9 +11,9 @@ import (
 	this node is not its successor. It will scan through the list of
 	nodes to make it's best guess of where of successor
 */
-func searchForSuccessor(targetKey int) int {
+func searchForSuccessor(targetKey int32) int {
 	for i := 0; i < len(memberStore_.members)-1; i++ {
-		if targetKey <= memberStore_.members[i].key {
+		if targetKey <= memberStore_.members[i].Key {
 			return i
 		}
 	}
@@ -25,25 +26,25 @@ func isFirstNode() bool {
 	return memberStore_.position == 0
 }
 
-func getCurrMember() Member {
+func getCurrMember() *pb.GossipMessage_Member {
 	return memberStore_.members[memberStore_.position]
 }
 
-func getRandMember() Member {
+func getRandMember() *pb.GossipMessage_Member {
 	return memberStore_.members[rand.Intn(len(memberStore_.members))]
 }
 
-func getPredecessor() (int, error) {
+func getPredecessor() (int32, error) {
 	if len(memberStore_.members) == 1 {
 		return -1, errors.New("can't find predecessor")
 	}
 	numMembers := len(memberStore_.members)
 	predecessorPosition := (memberStore_.position + numMembers - 1) % numMembers // Handles wrap around
 	predecessor := memberStore_.members[predecessorPosition]
-	return predecessor.key, nil
+	return predecessor.Key, nil
 }
 
-func isSuccessor(targetKey int) (bool, error) {
+func isSuccessor(targetKey int32) (bool, error) {
 	if len(memberStore_.members) <= 1 {
 		return true, nil
 	}

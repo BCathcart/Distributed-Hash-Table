@@ -15,26 +15,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-/************* REQUEST/REPLY PROTOCOL CODE *************/
-package main
-
-import (
-	"encoding/binary"
-	"fmt"
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
-	maps "github.com/ross-oreto/go-list-map"
-	"google.golang.org/protobuf/proto"
-	"hash/crc32"
-	"log"
-	"math/rand"
-	"net"
-	"runtime/debug"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
-)
-
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
@@ -246,7 +226,7 @@ func sendUDPRequest(addr *net.Addr, port int, destMemberKey int, payload []byte,
 		log.Println(err)
 	}
 
-	if internalID != HEARTBEAT {
+	if internalID != MEMBERSHIP_REQUEST {
 		// Add to request cache
 		putReqCacheEntry(string(msgID), internalID, serMsg, destMemberKey, addr, nil, false)
 	}
@@ -376,6 +356,18 @@ func SendGossipMessage(payload []byte, ip string, port int) error {
 	}
 	var netAddr net.Addr = udpAddr
 	sendUDPRequest(&netAddr, port, 0, payload, HEARTBEAT)
+	return nil
+}
+
+func SendMembershipMessage(payload []byte, ip string, port int) error {
+	addr := ip + ":" + strconv.Itoa(port)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		log.Println("WARN Could not resolve member UDP addr")
+		return err
+	}
+	var netAddr net.Addr = udpAddr
+	sendUDPRequest(&netAddr, port, 0, payload, MEMBERSHIP_REQUEST)
 	return nil
 }
 
