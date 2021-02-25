@@ -75,6 +75,21 @@ func requestReplyLayerInit() {
 			sweepCache()
 		}
 	}()
+
+	fmt.Println(getOutboundIP())
+
+}
+
+func getOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
 
 /**
@@ -593,7 +608,7 @@ func main() {
 	// Parse cmd line args
 	arguments := os.Args
 	if len(arguments) != 2 {
-		fmt.Printf("ERROR: Expecting 1 argument (received %d): Port #", len(arguments)-1)
+		fmt.Printf("ERROR: Expecting 1 argument (received %d): Port #\n", len(arguments)-1)
 		return
 	}
 
