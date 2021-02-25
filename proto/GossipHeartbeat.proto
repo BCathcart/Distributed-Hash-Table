@@ -1,0 +1,14 @@
+syntax = "proto3";
+package protobuf;
+option go_package = "pb/protobuf";
+
+message GossipMessage {
+    message Member {
+        bytes ip = 1;
+        int32 port = 2;
+        int32 key = 3;
+        int32 heartbeat = 4;
+        int32 status = 5;
+    }
+    repeated Member members = 1;
+}
