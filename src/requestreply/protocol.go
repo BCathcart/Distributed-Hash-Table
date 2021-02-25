@@ -14,7 +14,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-/************* REQUEST/REPLY PROTOCOL CODE *************/
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
@@ -365,6 +364,18 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 
 	writeMsg(*addr, serMsg)
+}
+
+func SendMembershipMessage(payload []byte, ip string, port int) error {
+	addr := ip + ":" + strconv.Itoa(port)
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		log.Println("WARN Could not resolve member UDP addr")
+		return err
+	}
+	var netAddr net.Addr = udpAddr
+	sendUDPRequest(&netAddr, payload, MEMBERSHIP_REQUEST)
+	return nil
 }
 
 /**

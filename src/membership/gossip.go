@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/abcpen431/miniproject/src/util"
+
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"github.com/abcpen431/miniproject/src/requestreply"
 	"github.com/golang/protobuf/proto"
@@ -42,9 +44,32 @@ func tickHeartbeat() {
 // TASK3 (part 1): Membership protocol (bootstrapping process)
 func makeMembershipReq() {
 	// Send request to random node (from list of nodes)
+	randMember := getRandMember()
+	//randMemberAddr := util.CreateAddressString(randMember.Ip, randMember.port)
+	localAddr := GetOutboundAddress()
+	localAddrStr := localAddr.String()
+	reqPayload := []byte(localAddrStr)
 
+	err := requestreply.SendMembershipMessage(reqPayload, string(randMember.Ip), int(randMember.Port))
+	if err != nil {
+		log.Println("Error sending membership message ") // TODO some sort of error handling
+	}
+	// TODO: This comment below
 	// Repeat this request periodically until receive TRANSFER_FINISHED message
 	// to protect against nodes failing (this will probably be more important for later milestones)
+}
+
+// Source: Sathish's campuswire post #310, slightly modified
+func GetOutboundAddress() net.Addr {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr()
+
+	return localAddr
 }
 
 // Rozhan
@@ -123,16 +148,37 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
 // The actual transfer from the succesor to the predecessor
 // Send a TRANSFER_FINISHED when it's done
-func transferToPredecessor( /* predecessor key */ ) {
+func transferToPredecessor(dummy1 string, dummy2 string, dummy3 uint32 /* predecessor key */) {
 	// Send all key-value pairs that is the responsibility of the predecessor
 	// Use PUT requests (like an external client)
 }
 
 // TOM
 // TASK3 (part 2): Membership protocol
+/**
+@param addr the address that sent the message
+@param InternalMsg the internal message being sent
+*/
 func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Find successor node and forward the
 	// membership request there to start the transfer
+
+	ipStr, portStr := util.GetIPPort(string(msg.Payload))
+	targetKey := util.GetNodeKey(ipStr, portStr)
+	nodeIsSuccessor, err := isSuccessor(targetKey)
+	if err != nil {
+		log.Println("Error finding successor") // TODO actually handle error
+	}
+	if nodeIsSuccessor {
+		go transferToPredecessor(ipStr, portStr, targetKey) // TODO Not sure about how to call this.
+	} else {
+		targetNodePosition := searchForSuccessor(targetKey)
+		targetMember := memberStore_.members[targetNodePosition]
+		err = requestreply.SendMembershipMessage(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
+		if err != nil {
+			log.Println("ERROR Sending membership message to successor") // TODO more error handling
+		}
+	}
 
 	// If this node is the successor, start transferring keys
 
@@ -152,6 +198,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 // TOM + Shay
 // TASK3 (part 4): Membership protocol - transfer to this node is finished
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
+	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
 	// End timer and set status to "Normal"
 	// Nodes will now start sending requests directly to us rather than to our successor.
 }
@@ -176,8 +223,8 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
+	key_ = uint32(util.GetNodeKey(string(ip), strconv.Itoa(int(port))))
 	// TODO: Get Key here
-	key_ = uint32(rand.Intn(100))
 
 	var status int32
 	if len(otherMembers) == 0 {
