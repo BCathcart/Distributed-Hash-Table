@@ -80,6 +80,10 @@ func (ms *MemberStore) getCurrMember() *pb.Member {
 
 func (ms *MemberStore) getRandMember() *pb.Member {
 	//pick a node at random to gossip to
+	if len(memberStore_.members) == 1 {
+		log.Println("Error: only one node")
+		return nil
+	}
 	randi := memberStore_.position
 	for randi == memberStore_.position {
 		randi = rand.Intn(len(memberStore_.members))
@@ -90,7 +94,7 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 func (ms *MemberStore) getLength() int {
 	ms.lock.RLock()
 	count := len(ms.members)
-	ms.lock.Unlock()
+	ms.lock.RUnlock()
 	return count
 }
 

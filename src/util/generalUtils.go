@@ -2,6 +2,7 @@ package util
 
 import (
 	"hash/crc32"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -23,6 +24,7 @@ func GetIPPort(addrString string) (string, string) {
 
 func GetAddr(ip string, port int) (*net.Addr, error) {
 	addr := ip + ":" + strconv.Itoa(port)
+	log.Println("ADDR TO PUT IN UDP ", addr)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err

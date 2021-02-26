@@ -345,10 +345,10 @@ func fillUp2(conn *net.UDPConn, port int) {
 }
 
 func main() {
-	serverIPaddress := "127.0.0.1"
+	serverIPaddress := "192.168.1.74"
 	// serverIPaddress := "34.82.84.40"
-	serverIPaddress = "172.30.143.255"
-	port := 44221
+	//serverIPaddress = "172.30.143.255"
+	port := 8081
 
 	// Open socket to the server
 	conn, err := connectToServer(serverIPaddress, port)

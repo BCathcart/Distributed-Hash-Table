@@ -2,6 +2,7 @@ package membership
 
 import (
 	"log"
+	"math/rand"
 	"net"
 	"strconv"
 	"time"
@@ -41,15 +42,19 @@ func tickHeartbeat() {
 
 // TOM
 // TASK3 (part 1): Membership protocol (bootstrapping process)
-func makeMembershipReq() {
+func makeMembershipReq(otherMembers []*net.UDPAddr) {
 	// Send request to random node (from list of nodes)
-	randMember := memberStore_.getRandMember()
+	randIdx := rand.Intn(len(otherMembers))
+	randAddr := otherMembers[randIdx]
+	log.Println("RANDOM ADDRESS", randAddr)
+	log.Println("RANDOM IP", randAddr.IP)
+	log.Println("RANDOM Port", randAddr.Port)
 	//randMemberAddr := util.CreateAddressString(randMember.Ip, randMember.port)
 	localAddr := GetOutboundAddress()
 	localAddrStr := localAddr.String()
 	reqPayload := []byte(localAddrStr)
 
-	err := requestreply.SendMembershipRequest(reqPayload, string(randMember.Ip), int(randMember.Port))
+	err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
 	if err != nil {
 		log.Println("Error sending membership message ") // TODO some sort of error handling
 	}
@@ -227,7 +232,7 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
-	key := uint32(util.GetNodeKey(string(ip), strconv.Itoa(int(port))))
+	key := util.GetNodeKey(string(ip), strconv.Itoa(int(port)))
 
 	var status int32
 	if len(otherMembers) == 0 {
@@ -247,7 +252,10 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 		for {
 			<-ticker.C
 			tickHeartbeat()
-			gossipHeartbeat()
+			if memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && len(memberStore_.members) != 1 {
+				log.Println("TICKED HEARTBEAT")
+				gossipHeartbeat()
+			}
 		}
 	}()
 
@@ -257,7 +265,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	// If no other nodes are known, then assume this is the first node
 	// and this node simply waits to be contacted
 	if len(otherMembers) != 0 {
-		makeMembershipReq()
+		makeMembershipReq(otherMembers)
 	}
 
 }
