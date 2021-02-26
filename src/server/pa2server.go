@@ -26,7 +26,7 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	}
 	defer connection.Close()
 
-	ip := GetOutboundIP()
+	ip := getOutboundIP()
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
@@ -39,8 +39,8 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	return err
 }
 
-// Get preferred outbound ip of this machine
-func GetOutboundIP() net.IP {
+// Source: Sathish's campuswire post #310
+func getOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		log.Fatal(err)

@@ -2,6 +2,7 @@ package membership
 
 import (
 	"log"
+	"math/rand"
 	"sort"
 	"sync"
 
@@ -11,7 +12,8 @@ import (
 type MemberStore struct {
 	lock     sync.RWMutex
 	members  []*pb.Member
-	position int
+	position int    // this node's position in the memberStore
+	mykey    uint32 // this node's key
 }
 
 /**
@@ -36,7 +38,7 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 	// find and update index of the current key
 
 	for i := range ms.members {
-		if ms.members[i].Key == key_ {
+		if ms.members[i].Key == ms.mykey {
 			ms.position = i
 			ms.lock.Unlock()
 			return
@@ -66,4 +68,35 @@ func (ms *MemberStore) findIPPortIndex(ip string, port int32) int {
 		}
 	}
 	return -1
+}
+
+func (ms *MemberStore) isFirstNode() bool {
+	return ms.position == 0
+}
+
+func (ms *MemberStore) getCurrMember() *pb.Member {
+	return ms.members[memberStore_.position]
+}
+
+func (ms *MemberStore) getRandMember() *pb.Member {
+	//pick a node at random to gossip to
+	randi := memberStore_.position
+	for randi == memberStore_.position {
+		randi = rand.Intn(len(memberStore_.members))
+	}
+	return ms.members[randi]
+}
+
+func (ms *MemberStore) getLength() int {
+	ms.lock.RLock()
+	count := len(ms.members)
+	ms.lock.Unlock()
+	return count
+}
+
+func (ms *MemberStore) get(pos int) *pb.Member {
+	ms.lock.RLock()
+	member := ms.members[pos]
+	ms.lock.RUnlock()
+	return member
 }

@@ -31,13 +31,6 @@ const INTERNAL_REQ_RETRIES = 1
 
 const MAX_BUFFER_SIZE = 11000
 
-const RES_CACHE_TIMEOUT = 6 // Messages only required to live in cache for 5 seconds
-
-/* Note: the cache has a small cap for now due to the nature of only having a small number
-of clients sending messages. The cache will need to expanded in the future once we have a
-better idea of the likely number of clients and their retry rate. */
-const MAX_RES_CACHE_ENTRIES = 50
-
 /**
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
@@ -256,32 +249,32 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 	resCache_.lock.Unlock()
 
 	// Determine if an internal or external message
-	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
+	// TODO: handle TRANSFER_REQ case
+	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ && reqMsg.InternalID != TRANSFER_REQ {
 		// TODO: pass handler as arg?
 
 		// Membership service is reponsible for sending response or forwarding the request
-		// TODO: internalReqHandler(conn, returnAddr, reqMsg)
 		internalReqHandler(returnAddr, reqMsg)
 
 		// FOR TESTING:
 		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
-	} else {
-		// TODO: determine if the key corresponds to this node
-		// var addr *net.Addr = nil
-
-		// TODO: If key corresponds to this node:
-		// Pass message to handler
-		payload, err := externalReqHandler(reqMsg.Payload)
-		if err != nil {
-			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
-			return
-		}
-		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
-
-		// TODO: If key doesn't correspond to this node:
-		// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
+		return
 	}
+	// TODO: determine if the key corresponds to this node
+	// var addr *net.Addr = nil
+
+	// TODO: If key corresponds to this node:
+	// Pass message to handler
+	payload, err := externalReqHandler(reqMsg.Payload)
+	if err != nil {
+		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
+		return
+	}
+	// Send response
+	sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
+
+	// TODO: If key doesn't correspond to this node:
+	// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
 
 }
 
@@ -320,23 +313,6 @@ func processResponse(resMsg *pb.InternalMsg) {
 	reqCache_.lock.Unlock()
 }
 
-func SendHeartbeatMessage(payload []byte, ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, payload, HEARTBEAT)
-	return nil
-}
-
-func SendHeatbeatRespose(addr net.Addr, messageID []byte) {
-	sendUDPResponse(addr, messageID, nil, true)
-	//TODO: nil payload will not cause issues?
-}
-
 /*
 * Creates, sends and caches a request.
 * @param addr The address to send the message to.
@@ -371,42 +347,6 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	writeMsg(*addr, serMsg)
-}
-
-func SendMembershipMessage(payload []byte, ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, payload, MEMBERSHIP_REQUEST)
-	return nil
-}
-
-func SendTransferMessage(payload []byte, ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, payload, TRANSFER_REQ)
-	return nil
-}
-
-func SendPingRequest(ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, nil, PING)
-	return nil
 }
 
 /**

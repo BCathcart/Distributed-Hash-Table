@@ -1,7 +1,6 @@
 package kvstore
 
 import (
-	"encoding/binary"
 	"log"
 	"os"
 	"runtime"
@@ -9,7 +8,9 @@ import (
 	"strconv"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	"github.com/abcpen431/miniproject/src/membership"
 	"github.com/abcpen431/miniproject/src/util"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -98,8 +99,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 	}
 
 	cmd := kvRequest.Command
-	reqKey := kvRequest.Key
-	key := binary.BigEndian.Uint32(kvRequest.Key) //TODO: Key will be string
+	key := string(kvRequest.Key)
 	value := kvRequest.Value
 	var version int32
 	if kvRequest.Version != nil {
@@ -111,7 +111,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 	// Determine action based on the command
 	switch cmd {
 	case PUT:
-		if len(reqKey) > MAX_KEY_LEN {
+		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else if len(value) > MAX_VAL_LEN {
 			errCode = INVALID_VAL
@@ -123,7 +123,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		}
 
 	case GET:
-		if len(reqKey) > MAX_KEY_LEN {
+		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else if memUsage() > MAX_MEM_USAGE {
 			kvRes = handleOverload()
@@ -139,7 +139,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		}
 
 	case REMOVE:
-		if len(reqKey) > MAX_KEY_LEN {
+		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
 			errCode = kvStore_.Remove(key)
@@ -162,8 +162,8 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		errCode = OK
 
 	case GET_MEMBERSHIP_COUNT:
-		tmpMemCount := int32(1) // Note: this will need to be updated in later PA
-		kvRes.MembershipCount = &tmpMemCount
+		count := int32(membership.GetMembershipCount())
+		kvRes.MembershipCount = &count
 		errCode = OK
 
 	default:
