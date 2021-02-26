@@ -1,6 +1,7 @@
 package util
 
 import (
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"hash/crc32"
 	"log"
 	"net"
@@ -35,4 +36,13 @@ func GetAddr(ip string, port int) (*net.Addr, error) {
 
 func GetNodeKey(ipStr string, portStr string) uint32 {
 	return crc32.ChecksumIEEE([]byte(ipStr + portStr))
+}
+
+func PrintInternalMsg(iMsg *pb.InternalMsg) {
+	log.Println("INTERNAL MESSAGE")
+	//log.Println(iMsg.MessageID)
+	//log.Println(iMsg.Payload)
+	//log.Println(iMsg.CheckSum)
+	log.Println(iMsg.InternalID)
+	//log.Println(iMsg.IsResponse)
 }
