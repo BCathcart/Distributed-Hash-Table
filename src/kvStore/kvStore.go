@@ -53,7 +53,7 @@ func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 	kvs.size += uint32(len(key) + len(val) + 4) // Increase kv store size
 
 	log.Println(kvs.size)
-	kvs.lock.Unlock() // TODO: this caused fatal error???
+	kvs.lock.Unlock()
 
 	return OK
 }

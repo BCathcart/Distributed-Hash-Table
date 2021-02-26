@@ -2,7 +2,6 @@ package requestreply
 
 import (
 	"encoding/binary"
-	"github.com/abcpen431/miniproject/src/util"
 	"hash/crc32"
 	"log"
 	"math/rand"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abcpen431/miniproject/src/util"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
@@ -260,13 +261,8 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// Determine if an internal or external message
 	// TODO: handle TRANSFER_REQ case
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ && reqMsg.InternalID != TRANSFER_REQ {
-		// TODO: pass handler as arg?
-
 		// Membership service is reponsible for sending response or forwarding the request
 		getInternalReqHandler()(returnAddr, reqMsg)
-
-		// FOR TESTING:
-		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
 		return
 	}
 	// TODO: determine if the key corresponds to this node
