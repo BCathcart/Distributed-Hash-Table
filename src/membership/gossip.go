@@ -42,7 +42,7 @@ func tickHeartbeat() {
 
 // TOM
 // TASK3 (part 1): Membership protocol (bootstrapping process)
-func makeMembershipReq(otherMembers []*net.UDPAddr) {
+func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int32) {
 	// Send request to random node (from list of nodes)
 	randIdx := rand.Intn(len(otherMembers))
 	randAddr := otherMembers[randIdx]
@@ -50,10 +50,9 @@ func makeMembershipReq(otherMembers []*net.UDPAddr) {
 	log.Println("RANDOM IP", randAddr.IP)
 	log.Println("RANDOM Port", randAddr.Port)
 	//randMemberAddr := util.CreateAddressString(randMember.Ip, randMember.port)
-	localAddr := GetOutboundAddress()
-	localAddrStr := localAddr.String()
+	localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
 	reqPayload := []byte(localAddrStr)
-
+	log.Println("MY ADDRESS: ", localAddrStr)
 	err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
 	if err != nil {
 		log.Println("Error sending membership message ") // TODO some sort of error handling
@@ -157,9 +156,13 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
 // The actual transfer from the succesor to the predecessor
 // Send a TRANSFER_FINISHED when it's done
-func transferToPredecessor(dummy1 string, dummy2 string, dummy3 uint32 /* predecessor key */) {
+func transferToPredecessor(ipStr string, portStr string, dummy3 uint32 /* predecessor key */) {
 	// Send all key-value pairs that is the responsibility of the predecessor
 	// Use PUT requests (like an external client)
+	log.Println("TRANSFER TO PRED: ", ipStr, portStr)
+	portInt, _ := strconv.Atoi(portStr)
+	_ = requestreply.SendTransferFinished([]byte(""), ipStr, portInt)
+
 }
 
 // TOM
@@ -207,9 +210,28 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 // TOM + Shay
 // TASK3 (part 4): Membership protocol - transfer to this node is finished
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
+	log.Println("\n===== TRANSFER FINISHED =======\n", addr)
 	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
+	ip, portStr := util.GetIPPort(addr.String())
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		log.Println("Invalid port")
+	}
+	newKey := util.GetNodeKey(ip, portStr)
+	newMember := &pb.Member{Ip: []byte(ip), Port: int32(port), Key: newKey, Heartbeat: 0, Status: STATUS_NORMAL}
+	memberStore_.members = append(memberStore_.members, newMember)
+	memberStore_.sortAndUpdateIdx()
+
 	// End timer and set status to "Normal"
 	// Nodes will now start sending requests directly to us rather than to our successor.
+}
+
+func MemberUnavailableHandler(addr *net.Addr) {
+	memberStore_.lock.Lock()
+	ip := (*addr).(*net.UDPAddr).IP.String()
+	port := (*addr).(*net.UDPAddr).Port
+	memberStore_.members[memberStore_.findIPPortIndex(ip, int32(port))].Status = STATUS_UNAVAILABLE
+	memberStore_.lock.Unlock()
 }
 
 // pass internal messges to the appropriate handler function
@@ -239,7 +261,7 @@ func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) {
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
-	key := util.GetNodeKey(string(ip), strconv.Itoa(int(port)))
+	key := util.GetNodeKey(ip, strconv.Itoa(int(port)))
 
 	var status int32
 	if len(otherMembers) == 0 {
@@ -257,6 +279,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {
 		for {
+			log.Println("MEMBERS", memberStore_.members)
 			<-ticker.C
 			tickHeartbeat()
 			if memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && len(memberStore_.members) != 1 {
@@ -272,7 +295,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	// If no other nodes are known, then assume this is the first node
 	// and this node simply waits to be contacted
 	if len(otherMembers) != 0 {
-		makeMembershipReq(otherMembers)
+		makeMembershipReq(otherMembers, ip, port)
 	}
 
 }

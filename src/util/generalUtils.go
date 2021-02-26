@@ -6,6 +6,8 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	pb "github.com/abcpen431/miniproject/pb/protobuf"
 )
 
 func GetAddressBytes(udpAddr *net.UDPAddr) []byte {
@@ -39,4 +41,13 @@ func GetNodeKey(ipStr string, portStr string) uint32 {
 
 func Hash(bytes []byte) uint32 {
 	return crc32.ChecksumIEEE(bytes)
+}
+
+func PrintInternalMsg(iMsg *pb.InternalMsg) {
+	log.Println("INTERNAL MESSAGE")
+	//log.Println(iMsg.MessageID)
+	//log.Println(iMsg.Payload)
+	//log.Println(iMsg.CheckSum)
+	log.Println(iMsg.InternalID)
+	//log.Println(iMsg.IsResponse)
 }

@@ -47,7 +47,16 @@ func SendHeartbeatMessage(payload []byte, ip string, port int) error {
 	return nil
 }
 
+func SendTransferFinished(payload []byte, ip string, port int) error {
+	addr, err := util.GetAddr(ip, port)
+	if err != nil {
+		log.Println("WARN Could not resolve member UDP addr")
+		return err
+	}
+	sendUDPRequest(addr, payload, TRANSFER_FINISHED)
+	return nil
+}
+
 func SendHeatbeatRespose(addr net.Addr, messageID []byte) {
 	sendUDPResponse(addr, messageID, nil, true)
-	//TODO: nil payload will not cause issues?
 }
