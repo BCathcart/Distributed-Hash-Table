@@ -115,6 +115,8 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 				// TODO: set member's status to unavailable if it's a ping message
 				//   - Add function to call here in gossip/membership service
 
+				go getNodeUnavailableHandler()(key)
+
 			} else {
 				// Send ping message to node we failed to receive a response from
 				ndToPing = reqCacheEntry.addr

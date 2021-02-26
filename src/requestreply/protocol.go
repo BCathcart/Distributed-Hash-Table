@@ -35,7 +35,16 @@ const MAX_BUFFER_SIZE = 11000
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
  */
-func RequestReplyLayerInit(connection *net.PacketConn) {
+func RequestReplyLayerInit(connection *net.PacketConn,
+	externalReqHandler func([]byte) ([]byte, error),
+	internalReqHandler func(net.Addr, *pb.InternalMsg),
+	nodeUnavailableHandler func(key string)) {
+
+	/* Store handlers */
+	setExternalReqHandler(externalReqHandler)
+	setInternalReqHandler(internalReqHandler)
+	setNodeUnavailableHandler(nodeUnavailableHandler)
+
 	/* Set up response cache */
 	resCache_ = NewCache()
 	reqCache_ = NewCache()
@@ -230,9 +239,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param reqMsg The incoming message.
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
-func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
-	externalReqHandler func([]byte) ([]byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg)) {
+func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	log.Println("Received Request of type ", strconv.Itoa(int(reqMsg.InternalID)))
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -254,7 +261,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 		// TODO: pass handler as arg?
 
 		// Membership service is reponsible for sending response or forwarding the request
-		internalReqHandler(returnAddr, reqMsg)
+		getInternalReqHandler()(returnAddr, reqMsg)
 
 		// FOR TESTING:
 		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
@@ -265,7 +272,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 
 	// TODO: If key corresponds to this node:
 	// Pass message to handler
-	payload, err := externalReqHandler(reqMsg.Payload)
+	payload, err := getExternalReqHandler()(reqMsg.Payload)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
@@ -355,9 +362,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 * @param externalReqHandler The external request handler callback.
 * @return An error message if failed to read from the connection.
  */
-func MsgListener(
-	externalReqHandler func([]byte) ([]byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg)) error {
+func MsgListener() error {
 	buffer := make([]byte, MAX_BUFFER_SIZE)
 
 	// Listen for packets
@@ -386,7 +391,7 @@ func MsgListener(
 		if msg.IsResponse {
 			go processResponse(msg)
 		} else {
-			go processRequest(returnAddr, msg, externalReqHandler, internalReqHandler)
+			go processRequest(returnAddr, msg)
 		}
 	}
 }

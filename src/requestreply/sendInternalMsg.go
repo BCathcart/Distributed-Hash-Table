@@ -49,5 +49,4 @@ func SendHeartbeatMessage(payload []byte, ip string, port int) error {
 
 func SendHeatbeatRespose(addr net.Addr, messageID []byte) {
 	sendUDPResponse(addr, messageID, nil, true)
-	//TODO: nil payload will not cause issues?
 }

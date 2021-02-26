@@ -212,6 +212,13 @@ func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Nodes will now start sending requests directly to us rather than to our successor.
 }
 
+func MemberUnavailableHandler(key string) {
+	memberStore_.lock.Lock()
+	// TODO: change keys to strings again
+	// memberStore_.members[memberStore_.findKeyIndex(key)].Status = STATUS_UNAVAILABLE
+	memberStore_.lock.Unlock()
+}
+
 // pass internal messges to the appropriate handler function
 func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 	switch msg.InternalID {

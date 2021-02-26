@@ -30,10 +30,11 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
-	requestreply.RequestReplyLayerInit(&connection)
+	requestreply.RequestReplyLayerInit(&connection, kvstore.RequestHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
+
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
 
-	err = requestreply.MsgListener(kvstore.RequestHandler, membership.InternalMsgHandler)
+	err = requestreply.MsgListener()
 
 	// Should never get here if everything is working
 	return err
