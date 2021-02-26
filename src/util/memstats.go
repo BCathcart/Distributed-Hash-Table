@@ -9,14 +9,18 @@ import (
 * Prints the process' memory statistics.
 * Source: https://golangcode.com/print-the-current-memory-usage/
  */
+const DONTPRINT = 1
+
 func PrintMemStats() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	log.Printf("Alloc = %v MiB", bToMb(m.Alloc))
-	log.Printf("\t Stack = %v\n", bToMb(m.StackSys))
-	log.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
-	log.Printf("\tSys = %v MiB", bToMb(m.Sys))
-	log.Printf("\tNum GC cycles = %v\n", m.NumGC)
+	if DONTPRINT == 0 {
+		log.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+		log.Printf("\t Stack = %v\n", bToMb(m.StackSys))
+		log.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+		log.Printf("\tSys = %v MiB", bToMb(m.Sys))
+		log.Printf("\tNum GC cycles = %v\n", m.NumGC)
+	}
 }
 
 /**

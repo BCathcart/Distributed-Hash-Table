@@ -2,6 +2,7 @@ package requestreply
 
 import (
 	"encoding/binary"
+	"github.com/abcpen431/miniproject/src/util"
 	"hash/crc32"
 	"log"
 	"math/rand"
@@ -234,6 +235,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 	externalReqHandler func([]byte) ([]byte, error),
 	internalReqHandler func(net.Addr, *pb.InternalMsg)) {
 	log.Println("Received Request of type ", strconv.Itoa(int(reqMsg.InternalID)))
+
 	// Check if response is already cached
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
@@ -286,7 +288,8 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 * @param handler The message handler callback.
  */
 func processResponse(resMsg *pb.InternalMsg) {
-	log.Println("Received response")
+	log.Println("Received response: ")
+	util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
 	req := reqCache_.data.Get(string(resMsg.MessageID))
