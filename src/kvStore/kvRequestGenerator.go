@@ -3,6 +3,7 @@ package kvstore
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
@@ -66,4 +67,22 @@ func serializeReqPayload(structPayload *pb.KVRequest) ([]byte, error) {
 		return nil, err
 	}
 	return serReqPayload, err
+}
+
+/*GetKeyList returns a list of all keys
+ * Interface for getting a list of all keys in kvStore from outside kvStore layer
+ * @return keyList A []int with all the keys stored in this kvStore
+ */
+func GetKeyList() []int {
+	return kvStore_.getAllKeys()
+}
+
+/*RemoveKey removes the entry with given key from local kvStore
+ * Interface for calling Remove() on local kvStore
+ * @param key The key to be removed from the kvStore
+ * @return a status indicating whether entry was successfully removed or not found
+ */
+func RemoveKey(key int) uint32 {
+	keyStr := strconv.Itoa(key)
+	return kvStore_.Remove(keyStr)
 }

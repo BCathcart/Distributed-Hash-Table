@@ -3,6 +3,7 @@ package kvstore
 import (
 	"container/list"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -154,4 +155,26 @@ func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
 		}
 	}
 	return false, 0
+}
+
+// shay
+/**
+* Getter for a list of all keys stored in kvStore
+* @return keyList A []int with all the keys
+ */
+func (kvs *KVStore) getAllKeys() []int {
+	var keyList []int
+	kvs.lock.RLock()
+
+	if kvs.GetSize() == 0 {
+		return nil
+	}
+
+	for e := kvs.data.Front(); e != nil; e = e.Next() {
+		key, _ := strconv.Atoi(e.Value.(kventry).key)
+		keyList = append(keyList, key)
+	}
+
+	kvs.lock.RUnlock()
+	return keyList
 }
