@@ -173,3 +173,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 
 	return resPayload, nil
 }
+
+func PrintKVStoreSize() {
+	log.Println("SIZE: ", kvStore_.GetSize())
+}

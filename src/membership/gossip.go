@@ -180,72 +180,72 @@ func transferToPredecessor(ipStr string, portStr string, dummy3 uint32 /* predec
 * @respCh A channel that feeds keys of kv's successfully received by the predecessor (for asynchronous requesting)
 * @return TBD: a confrmation that action completed correctly.
  */
-func transferToPredecessor(predrKey int, oredrIp string, predrPort int, respCh chan int) bool {
-	// Send all key-value pairs that is the responsibility of the predecessor
-	// Use PUT requests (like an external client)
+// func transferToPredecessor(predrKey int, oredrIp string, predrPort int, respCh chan int) bool {
+// 	// Send all key-value pairs that is the responsibility of the predecessor
+// 	// Use PUT requests (like an external client)
 
-	var payload *pb.KVRequest
+// 	var payload *pb.KVRequest
 
-	// create a temporary "sending buffer" of KVEntry objects to hold the entries to be sent to the predr
-	// var toTransfer map[int]KVEntry
-	// maps a key to number of times it has been sent so far
-	var toTransfer map[int]int
-	for entry := kvStore_.data.Front(); entry != nil; entry = entry.Next() {
-		entryKey := entry.Value.(KVEntry).key
-		if entryKey < predrKey {
-			toTransfer[entryKey] = 0
-		}
-	}
+// 	// create a temporary "sending buffer" of KVEntry objects to hold the entries to be sent to the predr
+// 	// var toTransfer map[int]KVEntry
+// 	// maps a key to number of times it has been sent so far
+// 	var toTransfer map[int]int
+// 	for entry := kvStore_.data.Front(); entry != nil; entry = entry.Next() {
+// 		entryKey := entry.Value.(KVEntry).key
+// 		if entryKey < predrKey {
+// 			toTransfer[entryKey] = 0
+// 		}
+// 	}
 
-	// listen for responses from predecessor.
-	// as new response comes in (a kv was succesffuly received by predr):
-	// a) check off key from list of keys to be sent
-	// b) remove corresponding entry from local KVStore
-	go func() {
-		// TODO: add check for how many times a kv was attempted to be sent + action for reaching retry limit
-		for len(toTransfer) > 0 {
-			receivedKeys := <-respCh
-			delete(toTransfer, receivedKeys)
-			removeKVEntry(receivedKeys)
-		}
-	}()
+// 	// listen for responses from predecessor.
+// 	// as new response comes in (a kv was succesffuly received by predr):
+// 	// a) check off key from list of keys to be sent
+// 	// b) remove corresponding entry from local KVStore
+// 	go func() {
+// 		// TODO: add check for how many times a kv was attempted to be sent + action for reaching retry limit
+// 		for len(toTransfer) > 0 {
+// 			receivedKeys := <-respCh
+// 			delete(toTransfer, receivedKeys)
+// 			removeKVEntry(receivedKeys)
+// 		}
+// 	}()
 
-	// while there are still kv's to be sent
-	for len(toTransfer) > 0 {
-		// iterate through "keys to be sent" list, send each kv
-		for entryKey, numAttempts := range toTransfer {
-			if numAttempts == TRANSFER_RETRY_LIMIT {
-				// TODO: terminate goroutine and return an error - unable to send kv's to predecessor
-				return false
-			}
+// 	// while there are still kv's to be sent
+// 	for len(toTransfer) > 0 {
+// 		// iterate through "keys to be sent" list, send each kv
+// 		for entryKey, numAttempts := range toTransfer {
+// 			if numAttempts == TRANSFER_RETRY_LIMIT {
+// 				// TODO: terminate goroutine and return an error - unable to send kv's to predecessor
+// 				return false
+// 			}
 
-			entry, isExist := getKVEntry(entryKey)
-			if isExist == NOT_FOUND {
-				// TODO: terminate goroutine and return an error - key not found in KVStore
-				return false
-			}
+// 			entry, isExist := getKVEntry(entryKey)
+// 			if isExist == NOT_FOUND {
+// 				// TODO: terminate goroutine and return an error - key not found in KVStore
+// 				return false
+// 			}
 
-			entryVal := entry.val
-			entryVer := entry.ver
+// 			entryVal := entry.val
+// 			entryVer := entry.ver
 
-			payload = putRequest(entryKey, entryVal, entryVer)
-			serPayload, err := serializeReqPayload(payload)
-			if err != nil {
-				// assuming an entry that failed to be serialized will be retried once the rest are sent
-				continue
-			}
+// 			payload = putRequest(entryKey, entryVal, entryVer)
+// 			serPayload, err := serializeReqPayload(payload)
+// 			if err != nil {
+// 				// assuming an entry that failed to be serialized will be retried once the rest are sent
+// 				continue
+// 			}
 
-			err = makeAsyncRequest(predrConn, serPayload, predrPort)
-			if err != nil {
-				// assuming an entry that failed to be sent will be retried once the rest are sent
-				continue
-			}
-		}
-	}
-	// TODO: send a DONE_TRANSFER message to predecessor
-	// TODO: figure out if needs a way to terminate goroutine when funciton returns
-	return true
-}
+// 			err = makeAsyncRequest(predrConn, serPayload, predrPort)
+// 			if err != nil {
+// 				// assuming an entry that failed to be sent will be retried once the rest are sent
+// 				continue
+// 			}
+// 		}
+// 	}
+// 	// TODO: send a DONE_TRANSFER message to predecessor
+// 	// TODO: figure out if needs a way to terminate goroutine when funciton returns
+// 	return true
+// }
 
 // TOM
 // TASK3 (part 2): Membership protocol
@@ -309,6 +309,7 @@ func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
 }
 
 func MemberUnavailableHandler(addr *net.Addr) {
+	log.Println("Member unavailable-- removing it")
 	memberStore_.lock.Lock()
 	ip := (*addr).(*net.UDPAddr).IP.String()
 	port := (*addr).(*net.UDPAddr).Port
@@ -363,6 +364,7 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	key := util.Hash(kvRequest.GetKey())
 	idx := searchForSuccessor(key)
 	if idx == memberStore_.position { //TODO status bootstaping?
+		log.Println(key, memberStore_.mykey, "keeping key")
 		payload, err := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
 		return nil, addr, payload, err
 	}

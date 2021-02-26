@@ -210,6 +210,7 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 * @param reqMsg The message to send.
  */
 func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
+	log.Println("Forwarding Request--------------")
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
@@ -360,7 +361,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	// Add to request cache
-	if internalID != MEMBERSHIP_REQUEST {
+	if internalID != MEMBERSHIP_REQUEST && internalID != TRANSFER_FINISHED {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 
@@ -402,6 +403,7 @@ func MsgListener() error {
 		if msg.IsResponse {
 			go processResponse(msg)
 		} else {
+			log.Println("Received Request")
 			go processRequest(returnAddr, msg)
 		}
 	}
