@@ -36,7 +36,6 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 	})
 
 	// find and update index of the current key
-
 	for i := range ms.members {
 		if ms.members[i].Key == ms.mykey {
 			ms.position = i
@@ -103,4 +102,10 @@ func (ms *MemberStore) get(pos int) *pb.Member {
 	member := ms.members[pos]
 	ms.lock.RUnlock()
 	return member
+}
+
+func (ms *MemberStore) remove(s int) {
+	ms.lock.Lock()
+	ms.members = append(ms.members[:s], ms.members[s+1:]...)
+	ms.lock.Unlock()
 }
