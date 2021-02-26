@@ -7,15 +7,15 @@ import (
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 )
 
-var externalReqHandler func([]byte) ([]byte, error) = nil
-var internalReqHandler func(net.Addr, *pb.InternalMsg) = nil
+var externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) = nil
+var internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error) = nil
 var nodeUnavailableHandler func(addr *net.Addr) = nil
 
-func setExternalReqHandler(handler func([]byte) ([]byte, error)) {
+func setExternalReqHandler(handler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error)) {
 	externalReqHandler = handler
 }
 
-func setInternalReqHandler(handler func(net.Addr, *pb.InternalMsg)) {
+func setInternalReqHandler(handler func(net.Addr, *pb.InternalMsg) (bool, []byte, error)) {
 	internalReqHandler = handler
 }
 
@@ -23,14 +23,14 @@ func setNodeUnavailableHandler(handler func(addr *net.Addr)) {
 	nodeUnavailableHandler = handler
 }
 
-func getExternalReqHandler() func([]byte) ([]byte, error) {
+func getExternalReqHandler() func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
 	if externalReqHandler == nil {
 		log.Println("Error: External request handler has not been set")
 	}
 	return externalReqHandler
 }
 
-func getInternalReqHandler() func(net.Addr, *pb.InternalMsg) {
+func getInternalReqHandler() func(net.Addr, *pb.InternalMsg) (bool, []byte, error) {
 	if internalReqHandler == nil {
 		log.Println("Error: Internal request handler has not been set")
 	}

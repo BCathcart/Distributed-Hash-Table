@@ -2,7 +2,6 @@ package requestreply
 
 import (
 	"encoding/binary"
-	"github.com/abcpen431/miniproject/src/util"
 	"hash/crc32"
 	"log"
 	"math/rand"
@@ -10,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/abcpen431/miniproject/src/util"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
@@ -37,8 +38,8 @@ const MAX_BUFFER_SIZE = 11000
 * request/reply layer to get expected functionality.
  */
 func RequestReplyLayerInit(connection *net.PacketConn,
-	externalReqHandler func([]byte) ([]byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg),
+	externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error),
+	internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error),
 	nodeUnavailableHandler func(addr *net.Addr)) {
 
 	/* Store handlers */
@@ -263,10 +264,15 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		// TODO: pass handler as arg?
 
 		// Membership service is reponsible for sending response or forwarding the request
-		getInternalReqHandler()(returnAddr, reqMsg)
+		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
+		if err != nil {
+			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
+			return
+		}
 
-		// FOR TESTING:
-		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
+		if respond {
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, true)
+		}
 		return
 	}
 	// TODO: determine if the key corresponds to this node
@@ -274,16 +280,18 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	// TODO: If key corresponds to this node:
 	// Pass message to handler
-	payload, err := getExternalReqHandler()(reqMsg.Payload)
+	fwdAddr, sendAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
 	}
-	// Send response
-	sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
-
-	// TODO: If key doesn't correspond to this node:
-	// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
+	if fwdAddr == nil {
+		// Send response
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
+	} else {
+		// TODO: If key doesn't correspond to this node:
+		forwardUDPRequest(&fwdAddr, &sendAddr, reqMsg)
+	}
 
 }
 

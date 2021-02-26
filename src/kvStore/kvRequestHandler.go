@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
-	"github.com/abcpen431/miniproject/src/membership"
 	"github.com/abcpen431/miniproject/src/util"
 
 	"google.golang.org/protobuf/proto"
@@ -82,7 +81,7 @@ func handleOverload() *pb.KVResponse {
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
  */
-func RequestHandler(serializedReq []byte) ([]byte, error) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -90,14 +89,6 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 	we only restrict PUT and GET requests. REMOVE and WIPEOUT may increase
 	the memory momentarily, but the benifit of the freed up space outweighs
 	the momentary costs. */
-
-	// Unmarshal KVRequest
-	kvRequest := &pb.KVRequest{}
-	err := proto.Unmarshal(serializedReq, kvRequest)
-	if err != nil {
-		return nil, err
-	}
-
 	cmd := kvRequest.Command
 	key := string(kvRequest.Key)
 	value := kvRequest.Value
@@ -162,7 +153,7 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		errCode = OK
 
 	case GET_MEMBERSHIP_COUNT:
-		count := int32(membership.GetMembershipCount())
+		count := int32(membershipCount)
 		kvRes.MembershipCount = &count
 		errCode = OK
 

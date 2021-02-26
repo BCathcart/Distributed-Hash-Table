@@ -1,12 +1,14 @@
 package membership
 
 import (
+	"errors"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
 	"time"
 
+	kvstore "github.com/abcpen431/miniproject/src/kvStore"
 	"github.com/abcpen431/miniproject/src/util"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
@@ -149,7 +151,6 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
-	requestreply.SendHeatbeatRespose(addr, msg.MessageID)
 }
 
 // Shay
@@ -235,26 +236,61 @@ func MemberUnavailableHandler(addr *net.Addr) {
 }
 
 // pass internal messges to the appropriate handler function
-func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
+func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error) {
+	var resPayload []byte = nil
+	var err error = nil
+	respond := false
 	switch msg.InternalID {
 	case MEMBERSHIP_REQUEST:
 		membershipReqHandler(addr, msg)
 
 	case HEARTBEAT:
-		go heartbeatHandler(addr, msg)
-
+		heartbeatHandler(addr, msg)
+		respond = true
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)
 
 	case TRANSFER_REQ:
-		transferRequestHandler(addr, msg)
-
+		resPayload, err = transferRequestHandler(addr, msg)
+		respond = true
 	default:
+		//TODO return err
 		log.Println("WARN: Invalid InternalID: " + strconv.Itoa(int(msg.InternalID)))
+		return false, nil, errors.New("Invalid InternalID Error")
 	}
+	return respond, resPayload, err
 }
 
-func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) {
+func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
+	// Unmarshal KVRequest
+	kvRequest := &pb.KVRequest{}
+	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+	if err != nil {
+		return nil, err
+	}
+	return kvstore.RequestHandler(kvRequest, GetMembershipCount())
+}
+
+// pass internal messges to the appropriate handler function
+func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
+	// Unmarshal KVRequest
+	kvRequest := &pb.KVRequest{}
+	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	key := util.Hash(kvRequest.GetKey())
+	idx := searchForSuccessor(key)
+	if idx == memberStore_.position { //TODO status bootstaping?
+		payload, err := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
+		return nil, addr, payload, err
+	}
+	member := memberStore_.get(idx)
+	forwardAddr, err := util.GetAddr(string(member.GetIp()), int(member.GetPort()))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return *forwardAddr, addr, msg.GetPayload(), nil
 
 }
 

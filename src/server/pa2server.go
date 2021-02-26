@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 
-	kvstore "github.com/abcpen431/miniproject/src/kvStore"
 	"github.com/abcpen431/miniproject/src/membership"
 	requestreply "github.com/abcpen431/miniproject/src/requestreply"
 	"github.com/abcpen431/miniproject/src/util"
@@ -30,7 +29,7 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
-	requestreply.RequestReplyLayerInit(&connection, kvstore.RequestHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
+	requestreply.RequestReplyLayerInit(&connection, membership.ExternalMsgHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
 
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
 
