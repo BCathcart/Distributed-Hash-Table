@@ -8,7 +8,9 @@ import (
 	"strconv"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	"github.com/abcpen431/miniproject/src/membership"
 	"github.com/abcpen431/miniproject/src/util"
+
 	"google.golang.org/protobuf/proto"
 )
 
@@ -127,10 +129,10 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 			kvRes = handleOverload()
 			errCode = OVERLOAD
 		} else {
-			entry, code := kvStore_.Get(key)
+			value, version, code := kvStore_.Get(key)
 			if code == OK {
-				kvRes.Value = entry.val
-				kvRes.Version = &entry.ver
+				kvRes.Value = value
+				kvRes.Version = &version
 			}
 
 			errCode = code
@@ -140,19 +142,16 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
-			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
-			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
 		os.Exit(1)
 
 	case WIPEOUT:
-		kvStore_.data.Init() // Clears the list
+		kvStore_.Wipeout()
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
-		kvStoreSize_ = 0
 
 	case IS_ALIVE:
 		errCode = OK
@@ -163,8 +162,8 @@ func RequestHandler(serializedReq []byte) ([]byte, error) {
 		errCode = OK
 
 	case GET_MEMBERSHIP_COUNT:
-		tmpMemCount := int32(1) // Note: this will need to be updated in later PA
-		kvRes.MembershipCount = &tmpMemCount
+		count := int32(membership.GetMembershipCount())
+		kvRes.MembershipCount = &count
 		errCode = OK
 
 	default:

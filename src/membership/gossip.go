@@ -1,12 +1,12 @@
 package membership
 
 import (
-	"github.com/abcpen431/miniproject/src/util"
 	"log"
-	"math/rand"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/abcpen431/miniproject/src/util"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"github.com/abcpen431/miniproject/src/requestreply"
@@ -18,6 +18,7 @@ import (
 const MEMBERSHIP_REQUEST = 0x1
 const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
+const TRANSFER_REQ = 0x6
 
 /***** GOSSIP PROTOCOL *****/
 const STATUS_NORMAL = 0x1
@@ -28,7 +29,6 @@ const HEARTBEAT_INTERVAL = 1000 // ms
 
 // Maps msg ID to serialized response
 var memberStore_ *MemberStore
-var key_ int32
 
 /*
 * Updates the heartbeat by one.
@@ -43,13 +43,13 @@ func tickHeartbeat() {
 // TASK3 (part 1): Membership protocol (bootstrapping process)
 func makeMembershipReq() {
 	// Send request to random node (from list of nodes)
-	randMember := getRandMember()
+	randMember := memberStore_.getRandMember()
 	//randMemberAddr := util.CreateAddressString(randMember.Ip, randMember.port)
 	localAddr := GetOutboundAddress()
 	localAddrStr := localAddr.String()
 	reqPayload := []byte(localAddrStr)
 
-	err := requestreply.SendMembershipMessage(reqPayload, string(randMember.Ip), int(randMember.Port))
+	err := requestreply.SendMembershipRequest(reqPayload, string(randMember.Ip), int(randMember.Port))
 	if err != nil {
 		log.Println("Error sending membership message ") // TODO some sort of error handling
 	}
@@ -75,9 +75,9 @@ func GetOutboundAddress() net.Addr {
 // TASK4 (part 1): Gossip heartbeat (send the entire member array in the MemberStore).
 func gossipHeartbeat() {
 	// Package MemberStore.members array
-	members := &pb.GossipMessage{}
+	members := &pb.Members{}
 	memberStore_.lock.RLock()
-	members.Members = make([]*pb.GossipMessage_Member, len(memberStore_.members))
+	members.Members = make([]*pb.Member, len(memberStore_.members))
 	for i, member := range memberStore_.members {
 		members.Members[i] = member
 	}
@@ -87,13 +87,9 @@ func gossipHeartbeat() {
 		log.Println(err)
 		return
 	}
-	//pick a node at random to gossip to
-	randi := memberStore_.position
-	for randi == memberStore_.position {
-		randi = rand.Intn(len(memberStore_.members))
-	}
-	randMember := memberStore_.members[randi]
-	err = requestreply.SendGossipMessage(gspPayload, string(randMember.GetIp()), int(randMember.GetPort()))
+
+	randMember := memberStore_.getRandMember()
+	err = requestreply.SendHeartbeatMessage(gspPayload, string(randMember.GetIp()), int(randMember.GetPort()))
 	if err != nil {
 		//corrupted ip addr/port
 		//TODO: discard member from members list?
@@ -103,7 +99,7 @@ func gossipHeartbeat() {
 // Rozhan
 // TASK4 (part 2): Compare incoming member array with current member array and
 // update entries to the one with the larger heartbeat (i.e. newer gossip)
-func heartbeatHandler(addr net.Addr, payload []byte) {
+func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Compare Members list and update as necessary
 	// Need to ignore any statuses of "Unavailable" (or just don't send them)
 	// since failure detection is local.
@@ -114,8 +110,9 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 
 	//assume the incoming member list is in the correct order so no need to
 	//reorder it?
+	payload := msg.GetPayload()
 
-	gossipMsg := &pb.GossipMessage{}
+	gossipMsg := &pb.Members{}
 	err := proto.Unmarshal(payload, gossipMsg)
 	if err != nil {
 		log.Println("WARN heartbeat message with invalid format")
@@ -135,19 +132,27 @@ func heartbeatHandler(addr net.Addr, payload []byte) {
 			if members[i].Key != memberStore_.members[localidx].GetKey() {
 				reindex = true
 			}
+			status := members[i].GetStatus()
+			if status == STATUS_UNAVAILABLE {
+				// ignore unavailable status from another node since
+				// failure detection is local
+				status = memberStore_.members[localidx].GetStatus()
+			}
 			memberStore_.members[localidx] = members[i]
+			memberStore_.members[localidx].Status = status
 		}
 	}
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	requestreply.SendHeatbeatRespose(addr, msg.MessageID)
 }
 
 // Shay
 // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
 // The actual transfer from the succesor to the predecessor
 // Send a TRANSFER_FINISHED when it's done
-func transferToPredecessor(dummy1 string, dummy2 string, dummy3 int32 /* predecessor key */) {
+func transferToPredecessor(dummy1 string, dummy2 string, dummy3 uint32 /* predecessor key */) {
 	// Send all key-value pairs that is the responsibility of the predecessor
 	// Use PUT requests (like an external client)
 }
@@ -163,7 +168,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// membership request there to start the transfer
 
 	ipStr, portStr := util.GetIPPort(string(msg.Payload))
-	targetKey := int32(util.GetNodeKey(ipStr, portStr))
+	targetKey := util.GetNodeKey(ipStr, portStr)
 	nodeIsSuccessor, err := isSuccessor(targetKey)
 	if err != nil {
 		log.Println("Error finding successor") // TODO actually handle error
@@ -173,7 +178,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	} else {
 		targetNodePosition := searchForSuccessor(targetKey)
 		targetMember := memberStore_.members[targetNodePosition]
-		err = requestreply.SendMembershipMessage(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
+		err = requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
 			log.Println("ERROR Sending membership message to successor") // TODO more error handling
 		}
@@ -209,7 +214,7 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 		membershipReqHandler(addr, msg)
 
 	case HEARTBEAT:
-		go heartbeatHandler(addr, msg.GetPayload())
+		go heartbeatHandler(addr, msg)
 
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)
@@ -222,8 +227,7 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
-	key_ = int32(util.GetNodeKey(string(ip), strconv.Itoa(int(port))))
-	// TODO: Get Key here
+	key := uint32(util.GetNodeKey(string(ip), strconv.Itoa(int(port))))
 
 	var status int32
 	if len(otherMembers) == 0 {
@@ -233,8 +237,9 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	}
 
 	// Add this node to Member array
-	memberStore_.members = append(memberStore_.members, &pb.GossipMessage_Member{Ip: []byte(ip), Port: port, Key: key_, Heartbeat: 0, Status: status})
+	memberStore_.members = append(memberStore_.members, &pb.Member{Ip: []byte(ip), Port: port, Key: key, Heartbeat: 0, Status: status})
 	memberStore_.position = 0
+	memberStore_.mykey = key
 
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)

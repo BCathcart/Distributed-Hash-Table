@@ -13,21 +13,6 @@ import (
 	"github.com/abcpen431/miniproject/src/util"
 )
 
-var MAX_MEM_USAGE uint64 = 120 * 1024 * 1024 // Max is actually 128 MB (8MB of buffer)
-
-/***** GOSSIP PROTOCOL *****/
-
-const STATUS_NORMAL = 0x1
-const STATUS_BOOTSTRAPPING = 0x2
-const STATUS_UNAVAILABLE = 0x3
-
-const HEARTBEAT_INTERVAL = 1000 // ms
-
-/**
-* Creates and returns a pointer to a new MemberStore
-* @return The member store.
- */
-
 /**
 * Runs the server. Should never return unless an error is encountered.
 * @param port The port to listen for UDP packets on.
@@ -41,22 +26,21 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	}
 	defer connection.Close()
 
-	ip := GetOutboundIP()
+	ip := getOutboundIP()
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
 	requestreply.RequestReplyLayerInit(&connection)
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
 
-	// Pass the
 	err = requestreply.MsgListener(kvstore.RequestHandler, membership.InternalMsgHandler)
 
 	// Should never get here if everything is working
 	return err
 }
 
-// Get preferred outbound ip of this machine
-func GetOutboundIP() net.IP {
+// Source: Sathish's campuswire post #310
+func getOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
 		log.Fatal(err)
@@ -105,10 +89,6 @@ func main() {
 		} else {
 			nodes = append(nodes, addr)
 		}
-	}
-	if len(nodes) == 0 {
-		fmt.Println("Error: No valid peer address provided")
-		return
 	}
 	fmt.Println(nodes)
 

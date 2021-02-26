@@ -2,7 +2,6 @@ package requestreply
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"log"
 	"math/rand"
@@ -24,20 +23,13 @@ const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
 const FORWARDED_CLIENT_REQ = 0x4
 const PING = 0x5
+const TRANSFER_REQ = 0x6
+
+// Only receive transfer request during bootstrapping
 
 const INTERNAL_REQ_RETRIES = 1
 
 const MAX_BUFFER_SIZE = 11000
-
-const RES_CACHE_TIMEOUT = 6 // Messages only required to live in cache for 5 seconds
-
-/* Note: the cache has a small cap for now due to the nature of only having a small number
-of clients sending messages. The cache will need to expanded in the future once we have a
-better idea of the likely number of clients and their retry rate. */
-const MAX_RES_CACHE_ENTRIES = 50
-
-const REQ_RETRY_TIMEOUT_MS = 250 // ms
-const REQ_CACHE_TIMEOUT = 6      // sec
 
 /**
 * Initializes the request/reply layer. Must be called before using
@@ -46,6 +38,7 @@ const REQ_CACHE_TIMEOUT = 6      // sec
 func RequestReplyLayerInit(connection *net.PacketConn) {
 	/* Set up response cache */
 	resCache_ = NewCache()
+	reqCache_ = NewCache()
 
 	// Sweep cache every RES_CACHE_TIMEOUT seconds
 	var ticker = time.NewTicker(time.Second * RES_CACHE_TIMEOUT)
@@ -180,7 +173,7 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal boo
 func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) {
 	// Remove internal fields if forwarding to a client
 	if isInternal == false {
-		resMsg = &pb.InternalMsg{
+		resMsg = &pb.InternalMsg{ // TODO: may need to change this to type pb.Msg
 			MessageID: resMsg.MessageID,
 			Payload:   resMsg.Payload,
 			CheckSum:  resMsg.CheckSum,
@@ -199,49 +192,13 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 }
 
 /*
-* Creates, sends and caches a request.
-* @param conn The connection object to send messages over.
-* @param addr The address to send the message to.
-* @param reqMsg The message to send.
- */
-// NOTE: this will be used for sending internal messages
-func sendUDPRequest(addr *net.Addr, port int, destMemberKey int, payload []byte, internalID uint8) {
-	localAddr := strings.Split((*conn).LocalAddr().String(), ":")[0]
-
-	fmt.Println(localAddr)
-	msgID := getmsgID(localAddr, uint16(port))
-
-	checksum := computeChecksum(msgID, payload)
-
-	reqMsg := &pb.InternalMsg{
-		MessageID:  msgID,
-		Payload:    payload,
-		CheckSum:   uint64(checksum),
-		InternalID: uint32(internalID),
-		IsResponse: false,
-	}
-
-	serMsg, err := proto.Marshal(reqMsg)
-	if err != nil {
-		log.Println(err)
-	}
-
-	if internalID != MEMBERSHIP_REQUEST {
-		// Add to request cache
-		putReqCacheEntry(string(msgID), internalID, serMsg, destMemberKey, addr, nil, false)
-	}
-
-	writeMsg(*addr, serMsg)
-}
-
-/*
 * Forwards and caches the request
 * @param conn The connection object to send messages over.
 * @param addr The address to send the message to.
 * @param returnAddr The address to forward the response to, nil if the response shouldn't be forwarded.
 * @param reqMsg The message to send.
  */
-func forwardUDPRequest(addr *net.Addr, destMemberKey int, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
+func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
@@ -258,9 +215,9 @@ func forwardUDPRequest(addr *net.Addr, destMemberKey int, returnAddr *net.Addr, 
 	// Add to request cache
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// No need to cache serialized message if is a client request since client responsible for retries
-		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), nil, destMemberKey, addr, returnAddr, isFirstHop)
+		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), nil, addr, returnAddr, isFirstHop)
 	} else {
-		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), serMsg, destMemberKey, addr, returnAddr, isFirstHop)
+		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), serMsg, addr, returnAddr, isFirstHop)
 	}
 
 	writeMsg(*addr, serMsg)
@@ -276,6 +233,7 @@ func forwardUDPRequest(addr *net.Addr, destMemberKey int, returnAddr *net.Addr, 
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 	externalReqHandler func([]byte) ([]byte, error),
 	internalReqHandler func(net.Addr, *pb.InternalMsg)) {
+	log.Println("Received Request of type ", strconv.Itoa(int(reqMsg.InternalID)))
 	// Check if response is already cached
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
@@ -291,29 +249,32 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 	resCache_.lock.Unlock()
 
 	// Determine if an internal or external message
-	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
+	// TODO: handle TRANSFER_REQ case
+	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ && reqMsg.InternalID != TRANSFER_REQ {
 		// TODO: pass handler as arg?
 
 		// Membership service is reponsible for sending response or forwarding the request
-		// TODO: internalReqHandler(conn, returnAddr, reqMsg)
 		internalReqHandler(returnAddr, reqMsg)
-	} else {
-		// TODO: determine if the key corresponds to this node
-		// var addr *net.Addr = nil
 
-		// TODO: If key corresponds to this node:
-		// Pass message to handler
-		payload, err := externalReqHandler(reqMsg.Payload)
-		if err != nil {
-			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
-			return
-		}
-		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
-
-		// TODO: If key doesn't correspond to this node:
-		// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
+		// FOR TESTING:
+		sendUDPResponse(returnAddr, reqMsg.MessageID, nil, true)
+		return
 	}
+	// TODO: determine if the key corresponds to this node
+	// var addr *net.Addr = nil
+
+	// TODO: If key corresponds to this node:
+	// Pass message to handler
+	payload, err := externalReqHandler(reqMsg.Payload)
+	if err != nil {
+		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
+		return
+	}
+	// Send response
+	sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
+
+	// TODO: If key doesn't correspond to this node:
+	// forwardUDPRequest(conn, addr, returnAddr, reqMsg)
 
 }
 
@@ -325,6 +286,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 * @param handler The message handler callback.
  */
 func processResponse(resMsg *pb.InternalMsg) {
+	log.Println("Received response")
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
 	req := reqCache_.data.Get(string(resMsg.MessageID))
@@ -336,10 +298,14 @@ func processResponse(resMsg *pb.InternalMsg) {
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		}
 
+		log.Println("Recieved response")
+
+		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
+
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
 		// TODO: what about for TRANSFER_FINISHED and MEMBERSHIP_REQUEST?
-		reqCache_.data.Delete(resMsg.MessageID)
+		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
 		log.Println("WARN: Received response for unknown request")
@@ -347,28 +313,40 @@ func processResponse(resMsg *pb.InternalMsg) {
 	reqCache_.lock.Unlock()
 }
 
-func SendGossipMessage(payload []byte, ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, port, 0, payload, HEARTBEAT)
-	return nil
-}
+/*
+* Creates, sends and caches a request.
+* @param addr The address to send the message to.
+* @param payload The request payload.
+* @param internalID The internal message type.
+ */
+// NOTE: this will be used for sending internal messages
+func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
+	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
+	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
-func SendMembershipMessage(payload []byte, ip string, port int) error {
-	addr := ip + ":" + strconv.Itoa(port)
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
+	msgID := getmsgID(ip, uint16(port))
+
+	checksum := computeChecksum(msgID, payload)
+
+	reqMsg := &pb.InternalMsg{
+		MessageID:  msgID,
+		Payload:    payload,
+		CheckSum:   uint64(checksum),
+		InternalID: uint32(internalID),
+		IsResponse: false,
 	}
-	var netAddr net.Addr = udpAddr
-	sendUDPRequest(&netAddr, port, 0, payload, MEMBERSHIP_REQUEST)
-	return nil
+
+	serMsg, err := proto.Marshal(reqMsg)
+	if err != nil {
+		log.Println(err)
+	}
+
+	// Add to request cache
+	if internalID != MEMBERSHIP_REQUEST {
+		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
+	}
+
+	writeMsg(*addr, serMsg)
 }
 
 /**
