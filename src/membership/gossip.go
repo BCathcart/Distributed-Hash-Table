@@ -212,10 +212,11 @@ func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Nodes will now start sending requests directly to us rather than to our successor.
 }
 
-func MemberUnavailableHandler(key string) {
+func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.lock.Lock()
-	// TODO: change keys to strings again
-	// memberStore_.members[memberStore_.findKeyIndex(key)].Status = STATUS_UNAVAILABLE
+	ip := (*addr).(*net.UDPAddr).IP.String()
+	port := (*addr).(*net.UDPAddr).Port
+	memberStore_.members[memberStore_.findIPPortIndex(ip, int32(port))].Status = STATUS_UNAVAILABLE
 	memberStore_.lock.Unlock()
 }
 

@@ -9,7 +9,7 @@ import (
 
 var externalReqHandler func([]byte) ([]byte, error) = nil
 var internalReqHandler func(net.Addr, *pb.InternalMsg) = nil
-var nodeUnavailableHandler func(key string) = nil
+var nodeUnavailableHandler func(addr *net.Addr) = nil
 
 func setExternalReqHandler(handler func([]byte) ([]byte, error)) {
 	externalReqHandler = handler
@@ -19,7 +19,7 @@ func setInternalReqHandler(handler func(net.Addr, *pb.InternalMsg)) {
 	internalReqHandler = handler
 }
 
-func setNodeUnavailableHandler(handler func(key string)) {
+func setNodeUnavailableHandler(handler func(addr *net.Addr)) {
 	nodeUnavailableHandler = handler
 }
 
@@ -37,7 +37,7 @@ func getInternalReqHandler() func(net.Addr, *pb.InternalMsg) {
 	return internalReqHandler
 }
 
-func getNodeUnavailableHandler() func(key string) {
+func getNodeUnavailableHandler() func(addr *net.Addr) {
 	if nodeUnavailableHandler == nil {
 		log.Println("Error: Node unavailable handler has not been set")
 	}

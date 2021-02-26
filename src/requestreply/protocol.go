@@ -38,7 +38,7 @@ const MAX_BUFFER_SIZE = 11000
 func RequestReplyLayerInit(connection *net.PacketConn,
 	externalReqHandler func([]byte) ([]byte, error),
 	internalReqHandler func(net.Addr, *pb.InternalMsg),
-	nodeUnavailableHandler func(key string)) {
+	nodeUnavailableHandler func(addr *net.Addr)) {
 
 	/* Store handlers */
 	setExternalReqHandler(externalReqHandler)
