@@ -224,9 +224,16 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) {
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)
 
+	case TRANSFER_REQ:
+		transferRequestHandler(addr, msg)
+
 	default:
 		log.Println("WARN: Invalid InternalID: " + strconv.Itoa(int(msg.InternalID)))
 	}
+}
+
+func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) {
+
 }
 
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {

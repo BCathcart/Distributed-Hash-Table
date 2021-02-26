@@ -36,3 +36,7 @@ func GetAddr(ip string, port int) (*net.Addr, error) {
 func GetNodeKey(ipStr string, portStr string) uint32 {
 	return crc32.ChecksumIEEE([]byte(ipStr + portStr))
 }
+
+func Hash(bytes []byte) uint32 {
+	return crc32.ChecksumIEEE(bytes)
+}

@@ -250,7 +250,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg,
 
 	// Determine if an internal or external message
 	// TODO: handle TRANSFER_REQ case
-	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ && reqMsg.InternalID != TRANSFER_REQ {
+	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// TODO: pass handler as arg?
 
 		// Membership service is reponsible for sending response or forwarding the request

@@ -76,7 +76,6 @@ func main() {
 		return
 	}
 
-	// TODO: parse file with IP addresses and ports of other nodes
 	var nodes []*net.UDPAddr
 	data, err := util.ReadLines(args[2])
 	if err != nil {
