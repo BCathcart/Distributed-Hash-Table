@@ -216,7 +216,7 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.lock.Lock()
 	ip := (*addr).(*net.UDPAddr).IP.String()
 	port := (*addr).(*net.UDPAddr).Port
-	memberStore_.members[memberStore_.findIPPortIndex(ip, int32(port))].Status = STATUS_UNAVAILABLE
+	memberStore_.remove(memberStore_.findIPPortIndex(ip, int32(port)))
 	memberStore_.lock.Unlock()
 }
 
