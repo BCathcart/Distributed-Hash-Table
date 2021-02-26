@@ -27,6 +27,7 @@ type kventry struct {
 func NewKVStore() *KVStore {
 	store := new(KVStore)
 	store.data = list.New()
+	store.size = 0
 	return store
 }
 
@@ -38,10 +39,9 @@ func NewKVStore() *KVStore {
 * @return OK if there is space, NO_SPACE if the store is full.
  */
 func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
-	kvs.lock.Lock()
-
 	// Remove needed to decrement kvStoreSize_ if key already exists
-	kvs.Remove(key) // *neeeds to be in critical section
+	kvs.Remove(key)
+	kvs.lock.Lock()
 
 	// Check if the store is full
 	if kvs.size > MAX_KV_STORE_SIZE {
@@ -98,7 +98,7 @@ func (kvs *KVStore) Remove(key string) uint32 {
 	}
 
 	log.Println(kvs.size)
-	kvs.lock.RUnlock()
+	kvs.lock.Unlock()
 
 	if success == true {
 		return OK

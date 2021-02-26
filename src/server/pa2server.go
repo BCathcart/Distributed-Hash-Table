@@ -90,10 +90,6 @@ func main() {
 			nodes = append(nodes, addr)
 		}
 	}
-	if len(nodes) == 0 {
-		fmt.Println("Error: No valid peer address provided")
-		return
-	}
 	fmt.Println(nodes)
 
 	err = runServer(nodes, port)
