@@ -118,6 +118,7 @@ func gossipHeartbeat(addr *net.Addr) {
 // that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
 // - need to check version number before writing
 func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
+	log.Println("RECEIVED HEARTBEAT MSG")
 
 	payload := msg.GetPayload()
 
@@ -159,6 +160,8 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 		memberStore_.sortAndUpdateIdx()
 	}
 	memberStore_.lock.Unlock()
+
+	log.Println(memberStore_.members)
 
 }
 
@@ -215,6 +218,8 @@ func transferToPredecessor(ipStr string, portStr string, predecessorKey uint32) 
 		}
 	}
 
+	log.Println("SENDING TRANSFER FINISHED TO PREDECESSOR WITH ADDRESS: ", ipStr, ":", portStr)
+
 	_ = requestreply.SendTransferFinished([]byte(""), ipStr, portInt)
 }
 
@@ -225,6 +230,8 @@ Otherwise, forward the membership request there to start the transfer
 @param InternalMsg the internal message being sent
 */
 func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
+	// Send heartbeat to the node requesting
+	gossipHeartbeat(&addr)
 
 	ipStr, portStr := util.GetIPPort(string(msg.Payload))
 	targetKey := util.GetNodeKey(ipStr, portStr)
@@ -232,11 +239,13 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	memberStore_.lock.RLock()
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
 	isSuccessor := targetMemberIdx == memberStore_.position
-	memberStore_.lock.RUnlock()
 
 	if isSuccessor {
+		memberStore_.transferNodeAddr = &addr
+		memberStore_.lock.RUnlock()
 		go transferToPredecessor(ipStr, portStr, targetKey)
 	} else {
+		memberStore_.lock.RUnlock()
 		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
 			log.Println("ERROR Sending membership message to successor") // TODO more error handling
@@ -250,6 +259,8 @@ Membership protocol: after receiving the transfer finished from the successor no
 sets status to normal
 */
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
+	log.Println("RECEIVED TRANSFER FINISHED MSG")
+
 	memberStore_.lock.RLock()
 
 	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
@@ -305,14 +316,8 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 	return respond, resPayload, err
 }
 
+// TODO(BRENNAN): what is this for????
 func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-	// Send heartbeat to the node requesting
-	gossipHeartbeat(&addr)
-
-	memberStore_.lock.RLock()
-	memberStore_.transferNodeAddr = &addr
-	memberStore_.lock.RUnlock()
-
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
@@ -357,7 +362,7 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	// os.Exit(1)
 
 	// First try handling the request here. If the key isn't found, forward the request to bootstrapping predecessor
-	if transferNdAddr != nil && *transferRcvNdKey == member.Key {
+	if transferRcvNdKey != nil && *transferRcvNdKey == member.Key {
 		payload, err, errCode := kvstore.RequestHandler(kvRequest, GetMembershipCount())
 		if errCode != kvstore.NOT_FOUND {
 			return nil, addr, payload, err
