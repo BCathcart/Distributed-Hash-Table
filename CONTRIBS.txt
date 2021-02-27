@@ -1,0 +1,13 @@
+BRENNAN
+- Initial membership/gossiping/failure detection design
+- Request/reply layer
+ROZHAN
+- Refactored code
+- Docker setup
+- Gossiping
+Thomas
+- Membership
+- Consistent hashing
+Shay
+- Transfer service
+- KVstore helpers
