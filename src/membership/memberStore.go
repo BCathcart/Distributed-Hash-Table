@@ -3,6 +3,7 @@ package membership
 import (
 	"log"
 	"math/rand"
+	"net"
 	"sort"
 	"sync"
 
@@ -10,10 +11,11 @@ import (
 )
 
 type MemberStore struct {
-	lock     sync.RWMutex
-	members  []*pb.Member
-	position int    // this node's position in the memberStore
-	mykey    uint32 // this node's key
+	lock             sync.RWMutex
+	members          []*pb.Member
+	position         int       // this node's position in the memberStore
+	mykey            uint32    // this node's key
+	transferNodeAddr *net.Addr // Set to current predecessor being transferred to, nil otherwise
 }
 
 /**
@@ -29,8 +31,9 @@ func NewMemberStore() *MemberStore {
 * Sorts and updates the
 * @return The member store.
  */
+/* MUST be holding write lock */
 func (ms *MemberStore) sortAndUpdateIdx() {
-	ms.lock.Lock()
+	// ms.lock.Lock()
 	sort.SliceStable(ms.members, func(i, j int) bool {
 		return ms.members[i].Key < ms.members[j].Key
 	})
@@ -39,42 +42,77 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 	for i := range ms.members {
 		if ms.members[i].Key == ms.mykey {
 			ms.position = i
-			ms.lock.Unlock()
+			// ms.lock.Unlock()
 			return
 		}
 	}
 
-	ms.lock.Unlock()
+	// ms.lock.Unlock()
 
 	// Should never get here!
 	log.Println("Error: could not find own key in member array")
 }
 
+/* Memberstore lock must be held */
+func (ms *MemberStore) getKeyFromAddr(addr *net.Addr) *uint32 {
+	ip := (*addr).(*net.UDPAddr).IP.String()
+	port := (*addr).(*net.UDPAddr).Port
+	position := memberStore_.findIPPortIndex(ip, int32(port))
+
+	if position != -1 {
+		key := memberStore_.members[position].Key
+		return &key
+	} else {
+		return nil
+	}
+}
+
+/* Finds index in membership list of a key
+Currently does not lock/unlock, assuming precondition of MemberStore lock being held */
 func (ms *MemberStore) findKeyIndex(key uint32) int {
+	// ms.lock.RLock()
 	for i := range ms.members {
 		if ms.members[i].Key == key {
+			// memberStore_.lock.RUnlock()
 			return i
 		}
 	}
+	// memberStore_.lock.RUnlock()
 	return -1
 }
 
+/* Memberstore lock must be held */
 func (ms *MemberStore) findIPPortIndex(ip string, port int32) int {
+	// ms.lock.RLock()
 	for i := range ms.members {
 		if string(ms.members[i].GetIp()) == ip &&
 			ms.members[i].GetPort() == port {
+			// memberStore_.lock.RUnlock()
 			return i
 		}
 	}
+	// memberStore_.lock.RUnlock()
 	return -1
 }
 
 func (ms *MemberStore) isFirstNode() bool {
-	return ms.position == 0
+	// Check if any STATUS_NORMAL nodes come before it
+	memberStore_.lock.RLock()
+	for i := 0; i < ms.position; i++ {
+		if ms.members[i].Status == STATUS_NORMAL {
+			memberStore_.lock.RUnlock()
+			return false
+		}
+	}
+	memberStore_.lock.RUnlock()
+	return true
 }
 
 func (ms *MemberStore) getCurrMember() *pb.Member {
-	return ms.members[memberStore_.position]
+	memberStore_.lock.RLock()
+	member := ms.members[memberStore_.position]
+	memberStore_.lock.RUnlock()
+	return member
 }
 
 func (ms *MemberStore) getRandMember() *pb.Member {
@@ -83,11 +121,14 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 		log.Println("Error: only one node")
 		return nil
 	}
+	memberStore_.lock.RLock()
 	randi := memberStore_.position
 	for randi == memberStore_.position {
 		randi = rand.Intn(len(memberStore_.members))
 	}
-	return ms.members[randi]
+	member := ms.members[randi]
+	memberStore_.lock.RUnlock()
+	return member
 }
 
 func (ms *MemberStore) getLength() int {
@@ -104,8 +145,20 @@ func (ms *MemberStore) get(pos int) *pb.Member {
 	return member
 }
 
-func (ms *MemberStore) remove(s int) {
+func (ms *MemberStore) removeidx(s int) {
+	if ms.position != s { //TODO don't allow the node to remove itself?
+		ms.members = append(ms.members[:s], ms.members[s+1:]...)
+		if ms.position > s {
+			ms.position--
+		}
+	}
+}
+
+func (ms *MemberStore) Remove(ip string, port int32) {
 	ms.lock.Lock()
-	ms.members = append(ms.members[:s], ms.members[s+1:]...)
+	idx := ms.findIPPortIndex(ip, int32(port))
+	if idx != -1 {
+		ms.removeidx(idx)
+	}
 	ms.lock.Unlock()
 }

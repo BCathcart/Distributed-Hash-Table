@@ -39,9 +39,6 @@ func sweepReqCache() {
 	entries := reqCache_.data.Entries()
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
-		// log.Println(entry.Key)
-		// log.Println(entry.Value)
-		// time.Sleep(2 * time.Second)
 
 		reqCacheEntry := entry.Value.(ReqCacheEntry)
 		elapsedTime := time.Now().Sub(reqCacheEntry.time)

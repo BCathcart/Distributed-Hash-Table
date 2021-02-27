@@ -2,12 +2,9 @@ package util
 
 import (
 	"hash/crc32"
-	"log"
 	"net"
 	"strconv"
 	"strings"
-
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
 )
 
 func GetAddressBytes(udpAddr *net.UDPAddr) []byte {
@@ -26,7 +23,6 @@ func GetIPPort(addrString string) (string, string) {
 
 func GetAddr(ip string, port int) (*net.Addr, error) {
 	addr := ip + ":" + strconv.Itoa(port)
-	log.Println("ADDR TO PUT IN UDP ", addr)
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, err
@@ -43,11 +39,10 @@ func Hash(bytes []byte) uint32 {
 	return crc32.ChecksumIEEE(bytes)
 }
 
-func PrintInternalMsg(iMsg *pb.InternalMsg) {
-	log.Println("INTERNAL MESSAGE")
-	//log.Println(iMsg.MessageID)
-	//log.Println(iMsg.Payload)
-	//log.Println(iMsg.CheckSum)
-	log.Println(iMsg.InternalID)
-	//log.Println(iMsg.IsResponse)
-}
+//func PrintInternalMsg(iMsg *pb.InternalMsg) {
+//	//log.Println("INTERNAL MESSAGE, ID:", iMsg.InternalID)
+//	//log.Println(iMsg.MessageID)
+//	//log.Println(iMsg.Payload)
+//	//log.Println(iMsg.CheckSum)
+//	//log.Println(iMsg.IsResponse)
+//}

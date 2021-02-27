@@ -10,8 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abcpen431/miniproject/src/util"
-
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
 )
@@ -133,7 +131,6 @@ func verifyChecksum(msg *pb.InternalMsg) bool {
 * @param msg The message to send.
  */
 func writeMsg(addr net.Addr, msg []byte) {
-	// Send msg
 	_, err := (*conn).WriteTo(msg, addr)
 	if err != nil {
 		log.Println(err)
@@ -210,7 +207,7 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 * @param reqMsg The message to send.
  */
 func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
-	log.Println("Forwarding Request--------------")
+	//log.Println("Forwarding Request--------------")
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
@@ -243,7 +240,6 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	log.Println("Received Request of type ", strconv.Itoa(int(reqMsg.InternalID)))
 
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -264,7 +260,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// TODO: pass handler as arg?
 
-		// Membership service is reponsible for sending response or forwarding the request
+		// Membership service is responsible for sending response or forwarding the request
 		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
 			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
@@ -276,11 +272,8 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		}
 		return
 	}
-	// TODO: determine if the key corresponds to this node
-	// var addr *net.Addr = nil
 
-	// TODO: If key corresponds to this node:
-	// Pass message to handler
+	// TODO: If key corresponds to this node: Pass message to handler
 	fwdAddr, sendAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
@@ -304,8 +297,8 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param handler The message handler callback.
  */
 func processResponse(resMsg *pb.InternalMsg) {
-	log.Println("Received response: ")
-	util.PrintInternalMsg(resMsg)
+	//log.Println("Received response of type", resMsg.GetInternalID())
+	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
 	req := reqCache_.data.Get(string(resMsg.MessageID))
@@ -317,13 +310,11 @@ func processResponse(resMsg *pb.InternalMsg) {
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		}
 
-		log.Println("Recieved response")
-
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
 
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
-		// TODO: what about for TRANSFER_FINISHED and MEMBERSHIP_REQUEST?
+		// TODO: Possible special handling for TRANSFER_FINISHED and MEMBERSHIP_REQUEST
 		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
@@ -340,6 +331,8 @@ func processResponse(resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
+	//log.Println("SEND UDP REQUEST")
+
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
@@ -361,7 +354,8 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	// Add to request cache
-	if internalID != MEMBERSHIP_REQUEST && internalID != TRANSFER_FINISHED {
+	// don't cache membership requests because we don't expect a response
+	if internalID != MEMBERSHIP_REQUEST {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 
@@ -379,7 +373,6 @@ func MsgListener() error {
 
 	// Listen for packets
 	for {
-		//log.Println("Awaiting packet")
 		n, returnAddr, err := (*conn).ReadFrom(buffer)
 		if err != nil {
 			return err
@@ -403,7 +396,6 @@ func MsgListener() error {
 		if msg.IsResponse {
 			go processResponse(msg)
 		} else {
-			log.Println("Received Request")
 			go processRequest(returnAddr, msg)
 		}
 	}

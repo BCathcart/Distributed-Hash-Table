@@ -5,11 +5,15 @@ import (
 	"runtime"
 )
 
+// Manual parameter for debugging. While printing memory usage was useful for some issues,
+// it was taking up too much space in the console and making it challenging
+// to debug other issues.
+const DONTPRINT = 1
+
 /**
 * Prints the process' memory statistics.
 * Source: https://golangcode.com/print-the-current-memory-usage/
  */
-const DONTPRINT = 1
 
 func PrintMemStats() {
 	var m runtime.MemStats

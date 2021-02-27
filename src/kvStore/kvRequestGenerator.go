@@ -3,19 +3,22 @@ package kvstore
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
 )
 
-func GetPutRequest(key []byte) ([]byte, error) {
-	value, ver, isExist := kvStore_.Get(string(key)) //TODO fix type
+/**
+Utility function for transferring to predecessor.
+Based on a key, get it from the store and returns
+a serialized put request
+*/
+func GetPutRequest(key string) ([]byte, error) {
+	value, ver, isExist := kvStore_.Get(key)
 	if isExist == NOT_FOUND {
-		// TODO: return an error? - key not found in KVStore
 		return nil, errors.New("KEY NOT FOUND")
 	}
-	putReq := putRequest(key, value, ver)
+	putReq := putRequest([]byte(key), value, ver)
 	payload, err := serializeReqPayload(putReq)
 	if err != nil {
 		// assuming an entry that failed to be serialized will be retried once the rest are sent
@@ -71,9 +74,9 @@ func serializeReqPayload(structPayload *pb.KVRequest) ([]byte, error) {
 
 /*GetKeyList returns a list of all keys
  * Interface for getting a list of all keys in kvStore from outside kvStore layer
- * @return keyList A []int with all the keys stored in this kvStore
+ * @return keyList A []string with all the keys stored in this kvStore
  */
-func GetKeyList() []int {
+func GetKeyList() []string {
 	return kvStore_.getAllKeys()
 }
 
@@ -82,7 +85,9 @@ func GetKeyList() []int {
  * @param key The key to be removed from the kvStore
  * @return a status indicating whether entry was successfully removed or not found
  */
-func RemoveKey(key int) uint32 {
-	keyStr := strconv.Itoa(key)
-	return kvStore_.Remove(keyStr)
+func RemoveKey(key string) uint32 {
+	kvStore_.lock.Lock()
+	ret := kvStore_.Remove(key)
+	kvStore_.lock.Unlock()
+	return ret
 }

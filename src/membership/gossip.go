@@ -1,7 +1,6 @@
 package membership
 
 import (
-	"encoding/binary"
 	"errors"
 	"log"
 	"math/rand"
@@ -18,10 +17,10 @@ import (
 )
 
 /* Internal Msg IDs */
-//TODO: don't copy, create new file?
 const MEMBERSHIP_REQUEST = 0x1
 const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
+const PING = 0x5
 const TRANSFER_REQ = 0x6
 
 /***** GOSSIP PROTOCOL *****/
@@ -34,8 +33,20 @@ const HEARTBEAT_INTERVAL = 1000 // ms
 // Maps msg ID to serialized response
 var memberStore_ *MemberStore
 
+func getKeyOfNodeTransferringTo() *uint32 {
+	memberStore_.lock.RLock()
+	if memberStore_.transferNodeAddr == nil {
+		memberStore_.lock.RUnlock()
+		return nil
+	} else {
+		ret := memberStore_.getKeyFromAddr(memberStore_.transferNodeAddr)
+		memberStore_.lock.RUnlock()
+		return ret
+	}
+}
+
 /*
-* Updates the heartbeat by one.
+* Updates the current node's heartbeat by one.
  */
 func tickHeartbeat() {
 	memberStore_.lock.Lock()
@@ -43,44 +54,30 @@ func tickHeartbeat() {
 	memberStore_.lock.Unlock()
 }
 
-// TOM
-// TASK3 (part 1): Membership protocol (bootstrapping process)
+/**
+Membership protocol (bootstrapping process). Sends a request to a random node,
+which will eventually get forwarded to our node's successor.
+
+@param otherMembers list of members, given from the initial text file on bootstrap
+@param thisIP Current node's ip
+@param thisPort Current node's port
+*/
 func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int32) {
 	// Send request to random node (from list of nodes)
 	randIdx := rand.Intn(len(otherMembers))
 	randAddr := otherMembers[randIdx]
-	log.Println("RANDOM ADDRESS", randAddr)
-	log.Println("RANDOM IP", randAddr.IP)
-	log.Println("RANDOM Port", randAddr.Port)
-	//randMemberAddr := util.CreateAddressString(randMember.Ip, randMember.port)
 	localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
 	reqPayload := []byte(localAddrStr)
-	log.Println("MY ADDRESS: ", localAddrStr)
 	err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
 	if err != nil {
-		log.Println("Error sending membership message ") // TODO some sort of error handling
+		log.Println("Error sending membership message ")
 	}
-	// TODO: This comment below
-	// Repeat this request periodically until receive TRANSFER_FINISHED message
-	// to protect against nodes failing (this will probably be more important for later milestones)
+	// TODO: For future milestones, Repeat this request periodically until receiving the TRANSFER_FINISHED message
+	// this would protect against nodes failing
 }
 
-// Source: Sathish's campuswire post #310, slightly modified
-func GetOutboundAddress() net.Addr {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr()
-
-	return localAddr
-}
-
-// Rozhan
-// TASK4 (part 1): Gossip heartbeat (send the entire member array in the MemberStore).
-func gossipHeartbeat() {
+// Sends the entire member array in the MemberStore.
+func gossipHeartbeat(addr *net.Addr) {
 	// Package MemberStore.members array
 	members := &pb.Members{}
 	memberStore_.lock.RLock()
@@ -95,28 +92,32 @@ func gossipHeartbeat() {
 		return
 	}
 
-	randMember := memberStore_.getRandMember()
-	err = requestreply.SendHeartbeatMessage(gspPayload, string(randMember.GetIp()), int(randMember.GetPort()))
+	// Pick random member if an address is not provided
+	var ip string
+	var port int
+	if addr == nil {
+		member := memberStore_.getRandMember()
+		ip = string(member.GetIp())
+		port = int(member.GetPort())
+	} else {
+		ip = (*addr).(*net.UDPAddr).IP.String()
+		port = (*addr).(*net.UDPAddr).Port
+	}
+
+	err = requestreply.SendHeartbeatMessage(gspPayload, ip, port)
 	if err != nil {
 		//corrupted ip addr/port
-		//TODO: discard member from members list?
+		//TODO: Possibly discard member from members list
 	}
 }
 
-// Rozhan
-// TASK4 (part 2): Compare incoming member array with current member array and
+// Compares incoming member array with current member array and
 // update entries to the one with the larger heartbeat (i.e. newer gossip)
+// TODO: (Not a big priority for M1) If we receive a heartbeat update from a predecessor
+// that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
+// - need to check version number before writing
 func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
-	// Compare Members list and update as necessary
-	// Need to ignore any statuses of "Unavailable" (or just don't send them)
-	// since failure detection is local.
 
-	// (Not a big priority for M1) If we receive a heartbeat update from a predecessor
-	// that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
-	// - need to check version number before writing
-
-	//assume the incoming member list is in the correct order so no need to
-	//reorder it?
 	payload := msg.GetPayload()
 
 	gossipMsg := &pb.Members{}
@@ -127,8 +128,11 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	}
 	reindex := false
 	members := gossipMsg.GetMembers()
+
+	// TODO: locking the whole time is inefficient but will prevent runtime errors
+	memberStore_.lock.Lock()
 	for i := range members {
-		//TODO: make more efficient?-- this is terrible-- runs finds for every member received
+		//TODO: Make finding IP Port index more efficient: currently runs finds for every member received
 		localidx := memberStore_.findIPPortIndex(string(members[i].GetIp()), members[i].GetPort())
 		if localidx == -1 {
 			// member was not in membership list, so add it
@@ -149,54 +153,58 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 			memberStore_.members[localidx].Status = status
 		}
 	}
+
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	memberStore_.lock.Unlock()
+
 }
 
-// Shay
-// TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
-// The actual transfer from the succesor to the predecessor
-// Send a TRANSFER_FINISHED when it's done
-// TBD: predecessorKey - original or hashed key?
-// TODO: async request/response
-func transferToPredecessor(ipStr string, portStr string, predecessorKey int) {
+/* Membership protocol - transfers the necessary data to a joined node
 
-	log.Println("TRANSFER TO PRED: ", ipStr, portStr)
+@param ipStr/PortStr address to transfer keys to
+@param predecessorKey key to transfer to
+Sends a TRANSFER_FINISHED when it's done
+
+*/
+func transferToPredecessor(ipStr string, portStr string, predecessorKey uint32) {
+
+	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", ipStr, ":", portStr)
 	portInt, _ := strconv.Atoi(portStr)
-
 	localKeyList := kvstore.GetKeyList()
 
-	// a map to hold the keys that need to be transfered and whether they've been successfully sent to predecessor
-	var keysToTransfer map[int]bool
+	// TODO a map to hold the keys that need to be transferred and whether they've been successfully sent to predecessor
+	// var keysToTransfer map[int]bool will be added in next milestone
 
 	// a byte array to hold the byte representation of the key
-	var keyBytes []byte
+	curKey := memberStore_.getCurrMember().Key
 
-	// iterate thru key list, if key should be transfered, add it to transfer map, send it topredecessor
+	// iterate thru key list, if key should be transferred, add it to transfer map, send it to predecessor
 	for _, key := range localKeyList {
-		if key <= predecessorKey {
-
-			// defaults to false until confirmed that key&value were successfully sent
-			keysToTransfer[key] = false
-
-			// convert key from int to byte array
-			binary.LittleEndian.PutUint16(keyBytes, uint16(key))
+		hashVal := util.Hash([]byte(key))
+		var shouldTransfer = false
+		if predecessorKey > curKey { // wrap around
+			shouldTransfer = hashVal >= predecessorKey || curKey >= hashVal
+		} else {
+			shouldTransfer = hashVal <= predecessorKey
+		}
+		if shouldTransfer {
 
 			// get the kv from local kvStore, serialized and ready to send
-			serPayload, err := kvstore.GetPutRequest(keyBytes)
+			serPayload, err := kvstore.GetPutRequest(key)
 			if err != nil {
-				log.Println("Could not get kv from local kvStore")
-				return
+				log.Println("WARN: Could not get kv from local kvStore")
+				continue
 			}
 
 			// send kv to predecessor using requestreply.SendTransferRequest (not sure this is what it's meant for)
 			// uses sendUDPRequest under the hood
 			err = requestreply.SendTransferRequest(serPayload, ipStr, portInt)
 
-			// TODO: a receipt confirmation mechanism + retry policy
-			// for now, assumes first transfer request is received successfully,
-			// doesn't wait for response to delete from local kvStore
+			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
+			doesn't wait for response to delete from local kvStore
+			*/
 			wasRemoved := kvstore.RemoveKey(key)
 			if wasRemoved == kvstore.NOT_FOUND {
 				log.Println("key", key, "was not found in local kvStore")
@@ -208,131 +216,39 @@ func transferToPredecessor(ipStr string, portStr string, predecessorKey int) {
 	_ = requestreply.SendTransferFinished([]byte(""), ipStr, portInt)
 }
 
-// // Shay
-// // TASK3 (part 3): Membership protocol - transfers the necessary data to a joined node
-// // The actual transfer from the succesor to the predecessor
-// // Send a TRANSFER_FINISHED when it's done
-// /**
-// * Listens for incoming messages, processes them, and then passes them to the handler callback.
-// * @param predrKey The key (the top end of the subset of the keyspace) of the predecessor
-// * @param conn The network connection object.
-// * @param predrPort the port number of the predecessor node.
-// * @respCh A channel that feeds keys of kv's successfully received by the predecessor (for asynchronous requesting)
-// * @return TBD: a confrmation that action completed correctly.
-//  */
-// func transferToPredecessor(predrKey int, oredrIp string, predrPort int, respCh chan int) bool {
-// 	// Send all key-value pairs that is the responsibility of the predecessor
-// 	// Use PUT requests (like an external client)
-
-// 	var payload *pb.KVRequest
-
-// 	// create a temporary "sending buffer" of KVEntry objects to hold the entries to be sent to the predr
-// 	// var toTransfer map[int]KVEntry
-// 	// maps a key to number of times it has been sent so far
-// 	var toTransfer map[int]int
-// 	for entry := kvStore_.data.Front(); entry != nil; entry = entry.Next() {
-// 		entryKey := entry.Value.(KVEntry).key
-// 		if entryKey < predrKey {
-// 			toTransfer[entryKey] = 0
-// 		}
-// 	}
-
-// 	// listen for responses from predecessor.
-// 	// as new response comes in (a kv was succesffuly received by predr):
-// 	// a) check off key from list of keys to be sent
-// 	// b) remove corresponding entry from local KVStore
-// 	go func() {
-// 		// TODO: add check for how many times a kv was attempted to be sent + action for reaching retry limit
-// 		for len(toTransfer) > 0 {
-// 			receivedKeys := <-respCh
-// 			delete(toTransfer, receivedKeys)
-// 			removeKVEntry(receivedKeys)
-// 		}
-// 	}()
-
-// 	// while there are still kv's to be sent
-// 	for len(toTransfer) > 0 {
-// 		// iterate through "keys to be sent" list, send each kv
-// 		for entryKey, numAttempts := range toTransfer {
-// 			if numAttempts == TRANSFER_RETRY_LIMIT {
-// 				// TODO: terminate goroutine and return an error - unable to send kv's to predecessor
-// 				return false
-// 			}
-
-// 			entry, isExist := getKVEntry(entryKey)
-// 			if isExist == NOT_FOUND {
-// 				// TODO: terminate goroutine and return an error - key not found in KVStore
-// 				return false
-// 			}
-
-// 			entryVal := entry.val
-// 			entryVer := entry.ver
-
-// 			payload = putRequest(entryKey, entryVal, entryVer)
-// 			serPayload, err := serializeReqPayload(payload)
-// 			if err != nil {
-// 				// assuming an entry that failed to be serialized will be retried once the rest are sent
-// 				continue
-// 			}
-
-// 			err = makeAsyncRequest(predrConn, serPayload, predrPort)
-// 			if err != nil {
-// 				// assuming an entry that failed to be sent will be retried once the rest are sent
-// 				continue
-// 			}
-// 		}
-// 	}
-// 	// TODO: send a DONE_TRANSFER message to predecessor
-// 	// TODO: figure out if needs a way to terminate goroutine when funciton returns
-// 	return true
-// }
-
-// TOM
-// TASK3 (part 2): Membership protocol
 /**
+Find successors node: if it is the current node, initiate the transfer process.
+Otherwise, forward the membership request there to start the transfer
 @param addr the address that sent the message
 @param InternalMsg the internal message being sent
 */
 func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
-	// Find successor node and forward the
-	// membership request there to start the transfer
 
 	ipStr, portStr := util.GetIPPort(string(msg.Payload))
 	targetKey := util.GetNodeKey(ipStr, portStr)
-	nodeIsSuccessor, err := isSuccessor(targetKey)
-	if err != nil {
-		log.Println("Error finding successor") // TODO actually handle error
-	}
-	if nodeIsSuccessor {
-		go transferToPredecessor(ipStr, portStr, targetKey) // TODO Not sure about how to call this.
+	memberStore_.lock.RLock()
+	_, targetMemberIdx := searchForSuccessor(targetKey, nil)
+	memberStore_.lock.RUnlock()
+	if targetMemberIdx == memberStore_.position {
+		go transferToPredecessor(ipStr, portStr, targetKey)
 	} else {
-		targetNodePosition := searchForSuccessor(targetKey)
-		targetMember := memberStore_.members[targetNodePosition]
-		err = requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
+		memberStore_.lock.RLock()
+		targetMember, _ := searchForSuccessor(targetKey, nil)
+		memberStore_.lock.RUnlock()
+		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
 			log.Println("ERROR Sending membership message to successor") // TODO more error handling
 		}
 	}
 
-	// If this node is the successor, start transferring keys
-
-	// If this node is the successor and already in the process of
-	// receiving or sending a transfer, respond with "Busy" to the request.
-	// The node sending the request will then re-send it after waiting a bit.
 }
 
-/* Ignore this */
-// func transferStartedHandler(addr net.Addr, msg *pb.InternalMsg) {
-// 	// Register that the transfer is started
-// 	// Start timeout, save IP of sender, and reset timer everytime receive a write from
-// 	// the IP address
-// 	// If timeout hit, set status to "Normal"
-// }
-
-// TOM + Shay
-// TASK3 (part 4): Membership protocol - transfer to this node is finished
+/**
+Membership protocol: after receiving the transfer finished from the successor node,
+sets status to normal
+*/
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
-	log.Println("\n===== TRANSFER FINISHED =======\n", addr)
+	// TODO: lock member store before accessing
 	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
 	ip, portStr := util.GetIPPort(addr.String())
 	port, err := strconv.Atoi(portStr)
@@ -341,42 +257,44 @@ func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
 	}
 	newKey := util.GetNodeKey(ip, portStr)
 	newMember := &pb.Member{Ip: []byte(ip), Port: int32(port), Key: newKey, Heartbeat: 0, Status: STATUS_NORMAL}
+
+	// TODO (Brennan): remove
 	memberStore_.members = append(memberStore_.members, newMember)
 	memberStore_.sortAndUpdateIdx()
+
+	memberStore_.transferNodeAddr = nil
 
 	// End timer and set status to "Normal"
 	// Nodes will now start sending requests directly to us rather than to our successor.
 }
 
+// When a member is found to be unavailable, remove it from the member list
 func MemberUnavailableHandler(addr *net.Addr) {
-	log.Println("Member unavailable-- removing it")
-	memberStore_.lock.Lock()
 	ip := (*addr).(*net.UDPAddr).IP.String()
 	port := (*addr).(*net.UDPAddr).Port
-	memberStore_.remove(memberStore_.findIPPortIndex(ip, int32(port)))
-	memberStore_.lock.Unlock()
+	memberStore_.Remove(ip, int32(port))
+	log.Println("Finished removing member: ", addr)
 }
 
-// pass internal messges to the appropriate handler function
+// passes internal messages to the appropriate handler function
 func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error) {
 	var resPayload []byte = nil
 	var err error = nil
-	respond := false
+	respond := true
 	switch msg.InternalID {
 	case MEMBERSHIP_REQUEST:
 		membershipReqHandler(addr, msg)
-
+		respond = false
 	case HEARTBEAT:
 		heartbeatHandler(addr, msg)
-		respond = true
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)
-
 	case TRANSFER_REQ:
 		resPayload, err = transferRequestHandler(addr, msg)
-		respond = true
+	case PING:
+		// Send nil payload back
+		log.Println("Got PINGed")
 	default:
-		//TODO return err
 		log.Println("WARN: Invalid InternalID: " + strconv.Itoa(int(msg.InternalID)))
 		return false, nil, errors.New("Invalid InternalID Error")
 	}
@@ -384,16 +302,25 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 }
 
 func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
+	// Send heartbeat to the node requesting
+	gossipHeartbeat(&addr)
+
+	memberStore_.transferNodeAddr = &addr
+
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
 	if err != nil {
 		return nil, err
 	}
-	return kvstore.RequestHandler(kvRequest, GetMembershipCount())
+
+	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
+	return payload, err
 }
 
-// pass internal messges to the appropriate handler function
+/**
+Passes internal messages to the appropriate handler function
+*/
 func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
@@ -401,14 +328,39 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	key := util.Hash(kvRequest.GetKey())
-	idx := searchForSuccessor(key)
-	if idx == memberStore_.position { //TODO status bootstaping?
-		log.Println(key, memberStore_.mykey, "keeping key")
-		payload, err := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
+
+	// TODO: Just use standard PUT requests with Internal ID of FORWARDED_CLIENT_REQUEST and no return address for transferring.
+
+	// If this node is bootstrapping and this is FORWARDED_CLIENT_REQ, then it automatically belongs to this node.
+	if memberStore_.getCurrMember().Status == STATUS_BOOTSTRAPPING && msg.InternalID == requestreply.FORWARDED_CLIENT_REQ {
+		//log.Println(key, memberStore_.mykey, "keeping key send by successor during bootstrap")
+		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
 		return nil, addr, payload, err
 	}
-	member := memberStore_.get(idx)
+
+	transferNdAddr := memberStore_.transferNodeAddr
+
+	transferRcvNdKey := getKeyOfNodeTransferringTo()
+	memberStore_.lock.RLock()
+	member, idx := searchForSuccessor(key, transferRcvNdKey)
+	memberStore_.lock.RUnlock()
+
+	// First try handling the request here. If the key isn't found, forward the request to bootstrapping predecessor
+	if transferNdAddr != nil && *transferRcvNdKey == member.Key {
+		payload, err, errCode := kvstore.RequestHandler(kvRequest, GetMembershipCount())
+		if errCode != kvstore.NOT_FOUND {
+			return nil, addr, payload, err
+		} else {
+			return *transferNdAddr, addr, payload, err
+		}
+
+	} else if idx == memberStore_.position { //TODO status bootstrapping?
+		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
+		return nil, addr, payload, err
+	}
+
 	forwardAddr, err := util.GetAddr(string(member.GetIp()), int(member.GetPort()))
 	if err != nil {
 		return nil, nil, nil, err
@@ -429,21 +381,18 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 		status = STATUS_BOOTSTRAPPING
 	}
 
-	// Add this node to Member array
+	// Add current node to Member array
 	memberStore_.members = append(memberStore_.members, &pb.Member{Ip: []byte(ip), Port: port, Key: key, Heartbeat: 0, Status: status})
 	memberStore_.position = 0
 	memberStore_.mykey = key
-
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {
 		for {
-			log.Println("MEMBERS", memberStore_.members)
 			<-ticker.C
 			tickHeartbeat()
-			if memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && len(memberStore_.members) != 1 {
-				log.Println("TICKED HEARTBEAT")
-				gossipHeartbeat()
+			if /* memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && */ memberStore_.getLength() != 1 {
+				gossipHeartbeat(nil)
 			}
 		}
 	}()

@@ -25,14 +25,18 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	}
 	defer connection.Close()
 
+	// find local IP address
 	ip := getOutboundIP()
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
+	// init the request/reply protocol layer
 	requestreply.RequestReplyLayerInit(&connection, membership.ExternalMsgHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
 
+	// init the membership service layer
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
 
+	// run until interrupted
 	err = requestreply.MsgListener()
 
 	// Should never get here if everything is working
@@ -40,6 +44,9 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 }
 
 // Source: Sathish's campuswire post #310
+/**
+* Returns local IP address
+ */
 func getOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
@@ -76,11 +83,13 @@ func main() {
 		return
 	}
 
-	var nodes []*net.UDPAddr
 	data, err := util.ReadLines(args[2])
 	if err != nil {
 		log.Println("Could not read", args[2])
 	}
+
+	// get addresses to existing nodes
+	var nodes []*net.UDPAddr
 	for _, line := range data {
 		addr, err := net.ResolveUDPAddr("udp", line)
 		if err != nil {
@@ -91,6 +100,7 @@ func main() {
 	}
 	fmt.Println(nodes)
 
+	// start the server
 	err = runServer(nodes, port)
 	if err != nil {
 		fmt.Println("Server encountered an error. " + err.Error())

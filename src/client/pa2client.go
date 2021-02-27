@@ -16,7 +16,7 @@ import (
 
 const TIMEOUT_SEC = 3
 const MAX_BUFFER_SIZE = 65527
-const NUM_RETRIES = 3
+const NUM_RETRIES = 5
 
 const PUT = 0x01
 const GET = 0x02
@@ -348,6 +348,7 @@ func main() {
 	serverIPaddress := "192.168.1.74"
 	// serverIPaddress := "34.82.84.40"
 	//serverIPaddress = "172.30.143.255"
+	//serverIPaddress = "127.0.0.1"
 	port := 8081
 
 	// Open socket to the server

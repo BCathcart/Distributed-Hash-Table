@@ -7,6 +7,10 @@ import (
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 )
 
+/*
+ * Getters and setters for internal (server-server) and external (client-server) request-response handlers
+ */
+
 var externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) = nil
 var internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error) = nil
 var nodeUnavailableHandler func(addr *net.Addr) = nil

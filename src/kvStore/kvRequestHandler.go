@@ -81,7 +81,7 @@ func handleOverload() *pb.KVResponse {
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
  */
-func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -133,7 +133,9 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
+			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
+			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
@@ -168,12 +170,16 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	resPayload, err := proto.Marshal(kvRes)
 	if err != nil {
 		log.Println("Marshaling payload error. ", err.Error())
-		return nil, err
+		return nil, err, errCode
 	}
 
-	return resPayload, nil
+	return resPayload, nil, errCode
 }
 
+/**
+Used for debugging purposes to ensure keys are being distributed evenly:
+prints out number of elements in cache
+*/
 func PrintKVStoreSize() {
 	log.Println("SIZE: ", kvStore_.GetSize())
 }

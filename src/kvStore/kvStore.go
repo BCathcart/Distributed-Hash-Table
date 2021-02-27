@@ -2,8 +2,6 @@ package kvstore
 
 import (
 	"container/list"
-	"log"
-	"strconv"
 	"strings"
 	"sync"
 )
@@ -41,9 +39,8 @@ func NewKVStore() *KVStore {
  */
 func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 	// Remove needed to decrement kvStoreSize_ if key already exists
-	kvs.Remove(key)
 	kvs.lock.Lock()
-
+	kvs.Remove(key)
 	// Check if the store is full
 	if kvs.size > MAX_KV_STORE_SIZE {
 		kvs.lock.Unlock()
@@ -53,7 +50,6 @@ func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 	kvs.data.PushBack(kventry{key: key, val: val, ver: version})
 	kvs.size += uint32(len(key) + len(val) + 4) // Increase kv store size
 
-	log.Println(kvs.size)
 	kvs.lock.Unlock()
 
 	return OK
@@ -92,14 +88,10 @@ func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
 func (kvs *KVStore) Remove(key string) uint32 {
-	kvs.lock.Lock()
 	success, n := kvs.removeListElem(key)
 	if success == true {
 		kvs.size -= uint32(n) // Decrease kv store size
 	}
-
-	log.Println(kvs.size)
-	kvs.lock.Unlock()
 
 	if success == true {
 		return OK
@@ -162,8 +154,8 @@ func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
 * Getter for a list of all keys stored in kvStore
 * @return keyList A []int with all the keys
  */
-func (kvs *KVStore) getAllKeys() []int {
-	var keyList []int
+func (kvs *KVStore) getAllKeys() []string {
+	var keyList []string
 	kvs.lock.RLock()
 
 	if kvs.GetSize() == 0 {
@@ -171,8 +163,7 @@ func (kvs *KVStore) getAllKeys() []int {
 	}
 
 	for e := kvs.data.Front(); e != nil; e = e.Next() {
-		key, _ := strconv.Atoi(e.Value.(kventry).key)
-		keyList = append(keyList, key)
+		keyList = append(keyList, e.Value.(kventry).key)
 	}
 
 	kvs.lock.RUnlock()
