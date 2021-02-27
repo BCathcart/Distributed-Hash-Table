@@ -240,6 +240,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
+	log.Println("Received request of type", reqMsg.GetInternalID())
 
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -274,7 +275,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	}
 
 	// TODO: If key corresponds to this node: Pass message to handler
-	fwdAddr, sendAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
+	fwdAddr, returnAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
@@ -284,7 +285,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
 	} else {
 		// TODO: If key doesn't correspond to this node:
-		forwardUDPRequest(&fwdAddr, &sendAddr, reqMsg)
+		forwardUDPRequest(&fwdAddr, &returnAddr, reqMsg)
 	}
 
 }
@@ -297,7 +298,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param handler The message handler callback.
  */
 func processResponse(resMsg *pb.InternalMsg) {
-	//log.Println("Received response of type", resMsg.GetInternalID())
+	// log.Println("Received response of type", resMsg.GetInternalID())
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
@@ -311,6 +312,7 @@ func processResponse(resMsg *pb.InternalMsg) {
 		}
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
+		// (not needed, just use FORWARDED_EXTERNAL_REQ)
 
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now

@@ -102,16 +102,12 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 		// Retry internal requests up to INTERNAL_REQ_RETRIES times
 		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES {
 			log.Println("RE-SENDING MSG")
-
 			reSendMsg(key, reqCacheEntry)
 
 			// Handle expired internal requests
 		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
 			if reqCacheEntry.msgType == PING {
 				log.Println("PING TIMED OUT")
-				// TODO: set member's status to unavailable if it's a ping message
-				//   - Add function to call here in gossip/membership service
-
 				go getNodeUnavailableHandler()(reqCacheEntry.addr)
 
 			} else {

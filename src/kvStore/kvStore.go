@@ -2,6 +2,7 @@ package kvstore
 
 import (
 	"container/list"
+	"log"
 	"strings"
 	"sync"
 )
@@ -40,17 +41,21 @@ func NewKVStore() *KVStore {
 func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 	// Remove needed to decrement kvStoreSize_ if key already exists
 	kvs.lock.Lock()
-	kvs.Remove(key)
+	log.Println("KVS LOCKED - Put()")
 	// Check if the store is full
 	if kvs.size > MAX_KV_STORE_SIZE {
 		kvs.lock.Unlock()
+		log.Println("KVS UNLOCKED")
 		return NO_SPACE
 	}
+
+	kvs.Remove(key)
 
 	kvs.data.PushBack(kventry{key: key, val: val, ver: version})
 	kvs.size += uint32(len(key) + len(val) + 4) // Increase kv store size
 
 	kvs.lock.Unlock()
+	log.Println("KVS UNLOCKED")
 
 	return OK
 }
@@ -66,6 +71,7 @@ func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
 	var found bool
 	var entry kventry
 	kvs.lock.RLock()
+	log.Println("KVS LOCKED - Get()")
 	res := kvs.findListElem(key)
 	if res != nil {
 		found = true
@@ -74,6 +80,7 @@ func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
 		found = false
 	}
 	kvs.lock.RUnlock()
+	log.Println("KVS UNLOCKED")
 
 	if found {
 		return entry.val, entry.ver, OK
@@ -112,9 +119,11 @@ func (kvs *KVStore) GetSize() uint32 {
  */
 func (kvs *KVStore) Wipeout() {
 	kvs.lock.Lock()
+	log.Println("KVS LOCKED - Wipeout()")
 	kvs.data.Init() // Clears the list
 	kvs.size = 0
 	kvs.lock.Unlock()
+	log.Println("KVS UNLOCKED")
 
 }
 
@@ -156,9 +165,13 @@ func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
  */
 func (kvs *KVStore) getAllKeys() []string {
 	var keyList []string
+
 	kvs.lock.RLock()
+	log.Println("KVS LOCKED - getAllKeys()")
 
 	if kvs.GetSize() == 0 {
+		kvs.lock.RUnlock()
+		log.Println("KVS UNLOCKED")
 		return nil
 	}
 
@@ -167,5 +180,6 @@ func (kvs *KVStore) getAllKeys() []string {
 	}
 
 	kvs.lock.RUnlock()
+	log.Println("KVS UNLOCKED")
 	return keyList
 }

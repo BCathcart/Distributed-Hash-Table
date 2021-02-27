@@ -3,6 +3,7 @@ package kvstore
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	pb "github.com/abcpen431/miniproject/pb/protobuf"
 	"google.golang.org/protobuf/proto"
@@ -87,7 +88,9 @@ func GetKeyList() []string {
  */
 func RemoveKey(key string) uint32 {
 	kvStore_.lock.Lock()
+	log.Println("KVS LOCKED - RemoveKey()")
 	ret := kvStore_.Remove(key)
 	kvStore_.lock.Unlock()
+	log.Println("KVS UNLOCKED")
 	return ret
 }

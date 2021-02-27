@@ -134,8 +134,10 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = INVALID_KEY
 		} else {
 			kvStore_.lock.Lock()
+			log.Println("KVS LOCKED - case REMOVE")
 			errCode = kvStore_.Remove(key)
 			kvStore_.lock.Unlock()
+			log.Println("KVS ULOCKED")
 		}
 
 	case SHUTDOWN:

@@ -33,14 +33,15 @@ const HEARTBEAT_INTERVAL = 1000 // ms
 // Maps msg ID to serialized response
 var memberStore_ *MemberStore
 
+/* MUST be holding member store lock */
 func getKeyOfNodeTransferringTo() *uint32 {
-	memberStore_.lock.RLock()
+	// memberStore_.lock.RLock()
 	if memberStore_.transferNodeAddr == nil {
-		memberStore_.lock.RUnlock()
+		// memberStore_.lock.RUnlock()
 		return nil
 	} else {
 		ret := memberStore_.getKeyFromAddr(memberStore_.transferNodeAddr)
-		memberStore_.lock.RUnlock()
+		// memberStore_.lock.RUnlock()
 		return ret
 	}
 }
@@ -183,14 +184,15 @@ func transferToPredecessor(ipStr string, portStr string, predecessorKey uint32) 
 	// iterate thru key list, if key should be transferred, add it to transfer map, send it to predecessor
 	for _, key := range localKeyList {
 		hashVal := util.Hash([]byte(key))
+
 		var shouldTransfer = false
 		if predecessorKey > curKey { // wrap around
 			shouldTransfer = hashVal >= predecessorKey || curKey >= hashVal
 		} else {
 			shouldTransfer = hashVal <= predecessorKey
 		}
-		if shouldTransfer {
 
+		if shouldTransfer {
 			// get the kv from local kvStore, serialized and ready to send
 			serPayload, err := kvstore.GetPutRequest(key)
 			if err != nil {
@@ -226,15 +228,15 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 
 	ipStr, portStr := util.GetIPPort(string(msg.Payload))
 	targetKey := util.GetNodeKey(ipStr, portStr)
+
 	memberStore_.lock.RLock()
-	_, targetMemberIdx := searchForSuccessor(targetKey, nil)
+	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
+	isSuccessor := targetMemberIdx == memberStore_.position
 	memberStore_.lock.RUnlock()
-	if targetMemberIdx == memberStore_.position {
+
+	if isSuccessor {
 		go transferToPredecessor(ipStr, portStr, targetKey)
 	} else {
-		memberStore_.lock.RLock()
-		targetMember, _ := searchForSuccessor(targetKey, nil)
-		memberStore_.lock.RUnlock()
 		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
 			log.Println("ERROR Sending membership message to successor") // TODO more error handling
@@ -248,21 +250,23 @@ Membership protocol: after receiving the transfer finished from the successor no
 sets status to normal
 */
 func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
-	// TODO: lock member store before accessing
-	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
-	ip, portStr := util.GetIPPort(addr.String())
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		log.Println("Invalid port")
-	}
-	newKey := util.GetNodeKey(ip, portStr)
-	newMember := &pb.Member{Ip: []byte(ip), Port: int32(port), Key: newKey, Heartbeat: 0, Status: STATUS_NORMAL}
+	memberStore_.lock.RLock()
 
-	// TODO (Brennan): remove
-	memberStore_.members = append(memberStore_.members, newMember)
+	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
+	// ip, portStr := util.GetIPPort(addr.String())
+	// port, err := strconv.Atoi(portStr)
+	// if err != nil {
+	// 	log.Println("Invalid port")
+	// }
+	// newKey := util.GetNodeKey(ip, portStr)
+	// newMember := &pb.Member{Ip: []byte(ip), Port: int32(port), Key: newKey, Heartbeat: 0, Status: STATUS_NORMAL}
+	// TODO (Brennan): remove - this is handled by heartbeat send in membership request handler
+	// memberStore_.members = append(memberStore_.members, newMember)
 	memberStore_.sortAndUpdateIdx()
 
 	memberStore_.transferNodeAddr = nil
+
+	memberStore_.lock.RUnlock()
 
 	// End timer and set status to "Normal"
 	// Nodes will now start sending requests directly to us rather than to our successor.
@@ -305,7 +309,9 @@ func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) 
 	// Send heartbeat to the node requesting
 	gossipHeartbeat(&addr)
 
+	memberStore_.lock.RLock()
 	memberStore_.transferNodeAddr = &addr
+	memberStore_.lock.RUnlock()
 
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
@@ -340,12 +346,15 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 		return nil, addr, payload, err
 	}
 
-	transferNdAddr := memberStore_.transferNodeAddr
-
-	transferRcvNdKey := getKeyOfNodeTransferringTo()
 	memberStore_.lock.RLock()
+	transferNdAddr := memberStore_.transferNodeAddr
+	transferRcvNdKey := getKeyOfNodeTransferringTo()
 	member, idx := searchForSuccessor(key, transferRcvNdKey)
+	thisMemberPos := memberStore_.position
 	memberStore_.lock.RUnlock()
+
+	// pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+	// os.Exit(1)
 
 	// First try handling the request here. If the key isn't found, forward the request to bootstrapping predecessor
 	if transferNdAddr != nil && *transferRcvNdKey == member.Key {
@@ -356,7 +365,7 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 			return *transferNdAddr, addr, payload, err
 		}
 
-	} else if idx == memberStore_.position { //TODO status bootstrapping?
+	} else if idx == thisMemberPos { //TODO status bootstrapping?
 		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
 		return nil, addr, payload, err
 	}
@@ -365,6 +374,7 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	if err != nil {
 		return nil, nil, nil, err
 	}
+
 	return *forwardAddr, addr, msg.GetPayload(), nil
 
 }
@@ -399,7 +409,6 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 
 	// Send initial membership request message - this tells receiving node they should try to contact the successor first (as well as
 	// respond with this node's IP address if needed)
-
 	// If no other nodes are known, then assume this is the first node
 	// and this node simply waits to be contacted
 	if len(otherMembers) != 0 {
