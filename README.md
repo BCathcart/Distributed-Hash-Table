@@ -28,3 +28,5 @@ Our implementation
   * Requests that need acknowledging are stored in the request cache
   * Responses are asynchronously received and matched to the request cache entry. 
   * The request cache automatically re-sends internal messages after 250ms without a response. External request retries are the responsibility of the client.
+  * After a request has timed out, a PING message is sent to check if the node is still available.
+
