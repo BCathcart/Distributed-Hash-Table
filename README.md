@@ -1,6 +1,20 @@
 # miniproject
 The CPEN 431 Mini-Project - DHT using Consistent Hashing Test Edit
 
+# miniproject
+The CPEN 431 Mini-Project - DHT using Consistent Hashing Test Edit
+
+### Team Members
+Name | github user
+------------ | -------------
+Brennan Cathcart | BCathcart
+Shay Tanne | rozsa
+Shay Tanne | shaytanne
+Thomas Broatch | tbroatch98
+
+<p>&nbsp;</p>
+
+
 ## Design
 - Every node has a heartbeat that is incremented every second (will serve a similar purpose to a logical clock)
 - There are two possible node statuses:
