@@ -99,6 +99,8 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		version = 0
 	}
 
+	log.Println("KEY: ", kvRequest.Key)
+
 	// Determine action based on the command
 	switch cmd {
 	case PUT:
@@ -112,6 +114,14 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		} else {
 			errCode = kvStore_.Put(key, value, version)
 		}
+
+		var tmp_value []byte
+		if len(value) > 20 {
+			tmp_value = value[:20]
+		} else {
+			tmp_value = value
+		}
+		log.Println("PUT VALUE: ", tmp_value)
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -129,15 +139,21 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = code
 		}
 
+		var tmp_value []byte
+		if len(kvRes.Value) > 20 {
+			tmp_value = kvRes.Value[:20]
+		} else {
+			tmp_value = kvRes.Value
+		}
+		log.Println("GOT VALUE: ", tmp_value)
+
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
 			kvStore_.lock.Lock()
-			log.Println("KVS LOCKED - case REMOVE")
 			errCode = kvStore_.Remove(key)
 			kvStore_.lock.Unlock()
-			log.Println("KVS ULOCKED")
 		}
 
 	case SHUTDOWN:

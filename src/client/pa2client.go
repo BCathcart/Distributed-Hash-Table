@@ -1,6 +1,7 @@
 package main
 
 import (
+	b64 "encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
@@ -175,7 +176,7 @@ func makeRequest(conn *net.UDPConn, payload []byte, port int, timeoutMS int) ([]
 	// msgId = []byte("69") // TODO: remove!
 
 	checksum := computeChecksum(msgId, payload)
-	fmt.Println(checksum)
+	// fmt.Println(checksum)
 
 	// Serialize message
 	msg := &pb.Msg{
@@ -278,15 +279,21 @@ func keyValueRequest(conn *net.UDPConn, port int, payload *pb.KVRequest) (bool, 
 	return true, kvResponse
 }
 
-func fillUp(conn *net.UDPConn, port int) {
+func fillUp(conn *net.UDPConn, port int, callNum int) {
 	bytesWritten := 0
 
 	var payload *pb.KVRequest
 
-	for i := uint32(0); i < 10000; i++ {
-		key := getMsgId("1.1.1.1", uint16(44221))
+	for i := uint32(0); i < 1000; i++ {
+		// key := getMsgId("1.1.1.1", uint16(44221))
+
+		key := []byte(strconv.Itoa(int(i)))
+
+		// val := make([]byte, 1000)
+		// binary.LittleEndian.PutUint32(val, i)
+
 		val := make([]byte, 1000)
-		binary.LittleEndian.PutUint32(val, i)
+		rand.Read(val)
 
 		payload = putRequest(key, val, 1)
 		status, kvRes := keyValueRequest(conn, port, payload)
@@ -302,9 +309,28 @@ func fillUp(conn *net.UDPConn, port int) {
 			return
 		}
 
+		payload = getRequest(key)
+		status, kvRes = keyValueRequest(conn, port, payload)
+
+		if kvRes.ErrCode != 0 {
+			fmt.Println("ERROR RESPONSE")
+			fmt.Println(kvRes.ErrCode)
+			return
+		}
+
+		if status == false {
+			fmt.Println("ERROR")
+			return
+		}
+
+		if string(val) != string(kvRes.Value) {
+			fmt.Println("Call num: ", callNum)
+			panic("PUT != GET")
+		}
+
 		bytesWritten += 16 + 10000
 
-		fmt.Println("Bytes written: " + strconv.Itoa(bytesWritten))
+		// fmt.Println("Bytes written: " + strconv.Itoa(bytesWritten))
 	}
 }
 
@@ -344,12 +370,25 @@ func fillUp2(conn *net.UDPConn, port int) {
 	}
 }
 
+func checkGet(conn *net.UDPConn, port int, key uint32) {
+	keyArr := make([]byte, 4)
+	binary.LittleEndian.PutUint32(keyArr, key)
+
+	payload := getRequest(keyArr)
+	_, kvRes := keyValueRequest(conn, port, payload)
+
+	fmt.Println()
+	fmt.Println(b64.StdEncoding.EncodeToString(kvRes.Value))
+	fmt.Println()
+}
+
 func main() {
+	fmt.Println("Client Started")
 	serverIPaddress := "192.168.1.74"
 	// serverIPaddress := "34.82.84.40"
 	//serverIPaddress = "172.30.143.255"
-	//serverIPaddress = "127.0.0.1"
-	port := 8081
+	serverIPaddress = "127.0.0.1"
+	port := 44221
 
 	// Open socket to the server
 	conn, err := connectToServer(serverIPaddress, port)
@@ -359,28 +398,34 @@ func main() {
 	}
 	defer conn.Close()
 
-	fillUp(conn, port)
+	// checkGet(conn, port, 28)
+
+	for i := 1; i < 1000; i++ {
+		fillUp(conn, port, 1)
+		fillUp(conn, port, 2)
+	}
+
 	// fillUp2(conn, port)
 
 	// 	var payload *pb.KVRequest
 
-	// 	key := make([]byte, 4)
-	// 	binary.LittleEndian.PutUint32(key, 69)
+	// key := make([]byte, 4)
+	// binary.LittleEndian.PutUint32(key, 69)
 
-	// 	val := make([]byte, 4)
-	// 	binary.LittleEndian.PutUint32(val, 420)
+	// val := make([]byte, 4)
+	// binary.LittleEndian.PutUint32(val, 420)
 
-	// 	// TODO: Test every possible error code
+	// TODO: Test every possible error code
 
-	// 	/* PUT */
-	// 	payload = putRequest(key, val, 1)
-	// 	status, kvRes := keyValueRequest(conn, port, payload)
+	/* PUT */
+	// payload = putRequest(key, val, 1)
+	// status, kvRes := keyValueRequest(conn, port, payload)
 
-	// 	fmt.Println(kvRes.ErrCode)
+	// fmt.Println(kvRes.ErrCode)
 
-	// 	/* GET */
-	// 	payload = getRequest(key)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	/* GET */
+	// payload = getRequest(key)
+	// status, kvRes = keyValueRequest(conn, port, payload)
 
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println(kvRes.Value)
@@ -419,6 +464,6 @@ func main() {
 	// 	// status, kvRes = keyValueRequest(conn, port, payload)
 	// 	// fmt.Println("SHUTDOWN")
 
-	// 	fmt.Println(status)
-	// 	fmt.Println(kvRes)
+	// fmt.Println(status)
+	// fmt.Println(kvRes)
 }

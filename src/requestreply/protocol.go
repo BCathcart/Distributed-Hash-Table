@@ -47,7 +47,6 @@ func RequestReplyLayerInit(connection *net.PacketConn,
 
 	/* Set up response cache */
 	resCache_ = NewCache()
-	reqCache_ = NewCache()
 
 	// Sweep cache every RES_CACHE_TIMEOUT seconds
 	var ticker = time.NewTicker(time.Second * RES_CACHE_TIMEOUT)
@@ -259,8 +258,6 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// Determine if an internal or external message
 	// TODO: handle TRANSFER_REQ case
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
-		// TODO: pass handler as arg?
-
 		// Membership service is responsible for sending response or forwarding the request
 		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
@@ -284,7 +281,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		// Send response
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
 	} else {
-		// TODO: If key doesn't correspond to this node:
+		// Forward request if key doesn't correspond to this node:
 		forwardUDPRequest(&fwdAddr, &returnAddr, reqMsg)
 	}
 
