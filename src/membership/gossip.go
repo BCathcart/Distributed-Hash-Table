@@ -289,10 +289,8 @@ func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
 
 // When a member is found to be unavailable, remove it from the member list
 func MemberUnavailableHandler(addr *net.Addr) {
-	ip := (*addr).(*net.UDPAddr).IP.String()
-	port := (*addr).(*net.UDPAddr).Port
-	memberStore_.Remove(ip, int32(port))
-	log.Println("Finished removing member: ", addr)
+	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
+	log.Println("Finished updateing member to UNAVAILABLE: ", *addr)
 }
 
 // passes internal messages to the appropriate handler function

@@ -57,10 +57,10 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 func (ms *MemberStore) getKeyFromAddr(addr *net.Addr) *uint32 {
 	ip := (*addr).(*net.UDPAddr).IP.String()
 	port := (*addr).(*net.UDPAddr).Port
-	position := memberStore_.findIPPortIndex(ip, int32(port))
+	position := ms.findIPPortIndex(ip, int32(port))
 
 	if position != -1 {
-		key := memberStore_.members[position].Key
+		key := ms.members[position].Key
 		return &key
 	} else {
 		return nil
@@ -97,37 +97,48 @@ func (ms *MemberStore) findIPPortIndex(ip string, port int32) int {
 
 func (ms *MemberStore) isFirstNode() bool {
 	// Check if any STATUS_NORMAL nodes come before it
-	memberStore_.lock.RLock()
+	ms.lock.RLock()
 	for i := 0; i < ms.position; i++ {
 		if ms.members[i].Status == STATUS_NORMAL {
-			memberStore_.lock.RUnlock()
+			ms.lock.RUnlock()
 			return false
 		}
 	}
-	memberStore_.lock.RUnlock()
+	ms.lock.RUnlock()
 	return true
 }
 
 func (ms *MemberStore) getCurrMember() *pb.Member {
-	memberStore_.lock.RLock()
-	member := ms.members[memberStore_.position]
-	memberStore_.lock.RUnlock()
+	ms.lock.RLock()
+	member := ms.members[ms.position]
+	ms.lock.RUnlock()
 	return member
 }
 
 func (ms *MemberStore) getRandMember() *pb.Member {
 	//pick a node at random to gossip to
-	if len(memberStore_.members) == 1 {
-		log.Println("Error: only one node")
+	var member *pb.Member
+	ms.lock.RLock()
+	membersCopy := make([]*pb.Member, len(ms.members))
+	copy(membersCopy, ms.members)
+
+	// Remove all members w/o STATUS_NORMAL
+	filterForStatusNormal(membersCopy)
+
+	if len(membersCopy) == 1 {
+		log.Println("Warn: only one STATUS_NORMAL node")
+		ms.lock.RUnlock()
 		return nil
 	}
-	memberStore_.lock.RLock()
-	randi := memberStore_.position
-	for randi == memberStore_.position {
-		randi = rand.Intn(len(memberStore_.members))
+
+	randi := ms.position
+	for randi == ms.position {
+		randi = rand.Intn(len(membersCopy))
 	}
-	member := ms.members[randi]
-	memberStore_.lock.RUnlock()
+
+	member = membersCopy[randi]
+	ms.lock.RUnlock() // Need to lock whole time b/c members are pointers
+
 	return member
 }
 
@@ -161,4 +172,27 @@ func (ms *MemberStore) Remove(ip string, port int32) {
 		ms.removeidx(idx)
 	}
 	ms.lock.Unlock()
+}
+
+/* Updates status if member found */
+func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
+	ip := (*addr).(*net.UDPAddr).IP.String()
+	port := (*addr).(*net.UDPAddr).Port
+
+	ms.lock.Lock()
+	idx := ms.findIPPortIndex(ip, int32(port))
+	ms.members[idx].Status = int32(status)
+	ms.lock.Unlock()
+}
+
+func filterForStatusNormal(members []*pb.Member) {
+	var i int
+	for i < len(members) {
+		if members[i].Status == STATUS_NORMAL {
+			i++
+		} else {
+			// Remove the element
+			members = append(members[:i], members[i+1:]...)
+		}
+	}
 }
