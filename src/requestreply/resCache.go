@@ -4,7 +4,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/abcpen431/miniproject/src/util"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 //RES_CACHE_TIMEOUT - for sweeing cache

@@ -7,8 +7,8 @@ import (
 	"runtime/debug"
 	"strconv"
 
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
-	"github.com/abcpen431/miniproject/src/util"
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	"google.golang.org/protobuf/proto"
 )

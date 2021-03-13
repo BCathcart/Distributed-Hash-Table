@@ -7,9 +7,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/abcpen431/miniproject/src/membership"
-	requestreply "github.com/abcpen431/miniproject/src/requestreply"
-	"github.com/abcpen431/miniproject/src/util"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/membership"
+	requestreply "github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /**

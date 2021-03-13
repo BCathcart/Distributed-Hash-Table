@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -277,6 +277,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
 	}
+
 	if fwdAddr == nil {
 		// Send response
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
