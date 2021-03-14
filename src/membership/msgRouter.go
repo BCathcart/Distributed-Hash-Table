@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
@@ -16,7 +17,7 @@ import (
 /**
 * Passes external messages to the appropriate handler function
  */
-func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error) {
+func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error) {
 	var resPayload []byte = nil
 	var err error = nil
 	respond := true
@@ -32,8 +33,9 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 	case TRANSFER_FINISHED:
 		transferFinishedHandler(addr, msg)
 
-	case TRANSFER_REQ:
-		resPayload, err = transferRequestHandler(addr, msg)
+	case DATA_TRANSFER:
+		chainReplication.HandleDataMsg(addr, msg)
+		// resPayload, err = transferRequestHandler(addr, msg)
 
 	case PING:
 		// Send nil payload back
@@ -51,7 +53,7 @@ func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
  * Passes external messages to the appropriate handler function if they belong to this node.
  * Forwards them to the correct node otherwise.
  */
-func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
+func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
@@ -62,7 +64,7 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	key := util.Hash(kvRequest.GetKey())
 
 	// If this node is bootstrapping and this is FORWARDED_CLIENT_REQ, then it automatically belongs to this node.
-	// TODO(Brennan): use TRANSFER_REQ type instead
+	// TODO(Brennan): use DATA_TRANSFER type instead?
 	if memberStore_.getCurrMember().Status == STATUS_BOOTSTRAPPING && msg.InternalID == requestreply.FORWARDED_CLIENT_REQ {
 		log.Println(key, memberStore_.mykey, "keeping key sent by successor during bootstrap")
 		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
@@ -79,6 +81,10 @@ func ExternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 
 	thisMemberPos := memberStore_.position
 	memberStore_.lock.RUnlock()
+
+	// TODO(Brennan): ask replition manager if it wants to handle it.
+	// This will handle it if it's a GET request that this node is a tail for
+	// or it's an PUT or REMOVE request that this node is the head for.
 
 	var forwardAddr *net.Addr
 

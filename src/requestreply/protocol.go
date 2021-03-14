@@ -24,6 +24,8 @@ const TRANSFER_FINISHED = 0x3
 const FORWARDED_CLIENT_REQ = 0x4
 const PING = 0x5
 const TRANSFER_REQ = 0x6
+const DATA_TRANSFER = 0x7
+const FORWARDED_CHAIN_UPDATE = 0x8
 
 // Only receive transfer request during bootstrapping
 
@@ -256,7 +258,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	resCache_.lock.Unlock()
 
 	// Determine if an internal or external message
-	// TODO: handle TRANSFER_REQ case
+	// TODO: handle DATA_TRANSFER case
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
 		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)

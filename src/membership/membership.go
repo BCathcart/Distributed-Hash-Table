@@ -7,12 +7,11 @@ import (
 	"strconv"
 	"time"
 
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
-	"github.com/golang/protobuf/proto"
 )
 
 /* Internal Msg IDs */
@@ -20,7 +19,7 @@ const MEMBERSHIP_REQUEST = 0x1
 const HEARTBEAT = 0x2
 const TRANSFER_FINISHED = 0x3
 const PING = 0x5
-const TRANSFER_REQ = 0x6
+const DATA_TRANSFER = 0x6
 
 /***** GOSSIP PROTOCOL *****/
 const STATUS_NORMAL = 0x1
@@ -86,10 +85,16 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 
 	if isSuccessor {
 		memberStore_.transferNodeAddr = &addr
-		curKey := memberStore_.getCurrMember().Key
+		// curKey := memberStore_.getCurrMember().Key
 		memberStore_.lock.Unlock()
 
-		go transferService.transferToPredecessor(ipStr, portStr, targetKey, curKey)
+		// TODO: Transfer everything between the target key and the previous predecessor
+		// TODO: move this funcionality to replicationManager.NewBootstrappingPredecessor
+		go transferService.TransferKVStoreData(ipStr, portStr, nil, &targetKey, func() {
+			memberStore_.lock.Lock()
+			memberStore_.transferNodeAddr = nil
+			memberStore_.lock.Unlock()
+		})
 	} else {
 		memberStore_.lock.Unlock()
 		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
@@ -123,17 +128,17 @@ func MemberUnavailableHandler(addr *net.Addr) {
 }
 
 // TODO(Brennan): what is this for????
-func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-	// Unmarshal KVRequest
-	kvRequest := &pb.KVRequest{}
-	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
-	if err != nil {
-		return nil, err
-	}
+// func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
+// 	// Unmarshal KVRequest
+// 	kvRequest := &pb.KVRequest{}
+// 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-	return payload, err
-}
+// 	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
+// 	return payload, err
+// }
 
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()

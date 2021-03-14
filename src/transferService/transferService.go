@@ -14,7 +14,13 @@ import (
 @param predecessorKey key to transfer to
 Sends a TRANSFER_FINISHED when it's done
 */
-func TransferKVStoreData(ipStr string, portStr string, minKey uint32, maxKey uint32) {
+
+// Transfer all data with keys between minKey and maxKey
+// If minkey is nil, transfer everything before maxKey
+// If maxkey is nil, transfer everything after minKey
+// Can't both be nil
+
+func TransferKVStoreData(ipStr string, portStr string, minKey *uint32, maxKey *uint32, transferFinishedCallback func()) {
 
 	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", ipStr, ":", portStr)
 	portInt, _ := strconv.Atoi(portStr)
@@ -28,7 +34,7 @@ func TransferKVStoreData(ipStr string, portStr string, minKey uint32, maxKey uin
 		hashVal := util.Hash([]byte(key))
 
 		var shouldTransfer = false
-		// TODO(Brennan): update how we determine shouldTransfer(?)
+		// TODO(Brennan): update how we determine shouldTransfer
 		if predecessorKey > curKey { // wrap around
 			shouldTransfer = hashVal >= predecessorKey || curKey >= hashVal
 		} else {
@@ -62,8 +68,5 @@ func TransferKVStoreData(ipStr string, portStr string, minKey uint32, maxKey uin
 
 	_ = requestreply.SendTransferFinished([]byte(""), ipStr, portInt)
 
-	// TODO(Brennan): do this in a callback
-	memberStore_.lock.Lock()
-	memberStore_.transferNodeAddr = nil
-	memberStore_.lock.Unlock()
+	transferFinishedCallback()
 }

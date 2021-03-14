@@ -31,7 +31,7 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 
 	// Bootstrap node
 	// init the request/reply protocol layer
-	requestreply.RequestReplyLayerInit(&connection, membership.ExternalMsgHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
+	requestreply.RequestReplyLayerInit(&connection, membership.ExternalReqHandler, membership.InternalReqHandler, membership.MemberUnavailableHandler)
 
 	// init the membership service layer
 	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))

@@ -72,3 +72,7 @@ func SendTransferFinished(payload []byte, ip string, port int) error {
 	sendUDPRequest(addr, payload, TRANSFER_FINISHED)
 	return nil
 }
+
+func SendTransferMsg() {
+
+}
