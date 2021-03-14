@@ -22,10 +22,13 @@ type successorNode struct {
 	addr *net.Addr
 }
 
+// TODO: need reference to this nodes KV store?
+
 type predecessorNode struct {
 	keys       keyRange
 	addr       *net.Addr
 	transfered bool
+	// TODO: add kvStore instance here?
 }
 
 var predecessors []predecessorNode // 0 = first, 1 = second
@@ -54,6 +57,9 @@ func NewBootstrappingPredecessor(addr *net.Addr) {
 func UpdatePredecessors(firstPredAddr *net.Addr, secondPredAddr *net.Addr, minKey uint32, middleKey uint32, maxKey uint32) {
 	// If the new predecessor is not the previous predessor's predecessor,
 	// then start the Bootstrap transfer to the newly joined node
+
+	// TODO: handle case second predecessor stays the same but its key range changes
+	// - drop keys we are no longer responsible for
 
 	// NOTE: this case handled by having membership layer NewBootstrappingPredecessor
 	// if predecessors[0].addr != secondPredAddr {
@@ -154,7 +160,8 @@ func HandleClientRequest() {
 	// Updates (PUT and REMOVE) performed here and then forwarded
 
 	// GET responded to here if they correspond to predecessors[0], and
-	//
+
+	// Any other type of client request gets handled here
 }
 
 func ServiceRequest(msg *pb.InternalMsg) ([]byte, error) {
