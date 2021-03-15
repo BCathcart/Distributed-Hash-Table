@@ -31,8 +31,9 @@ type predecessorNode struct {
 	// TODO: add kvStore instance here?
 }
 
-var predecessors []predecessorNode // 0 = first, 1 = second
-var successor successorNode
+// 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
+var predecessors [3]*predecessorNode
+var successor *successorNode
 
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
@@ -40,7 +41,6 @@ var pendingRcvingTransfers []*net.Addr
 
 func init() {
 	// Init successor and predecessors
-
 	prepareForBootstrapTransfer(nil)
 }
 
@@ -54,9 +54,25 @@ func NewBootstrappingPredecessor(addr *net.Addr) {
 }
 
 // TODO: may need to update both predecessors at once
-func UpdatePredecessors(firstPredAddr *net.Addr, secondPredAddr *net.Addr, minKey uint32, middleKey uint32, maxKey uint32) {
+func UpdatePredecessors(firstPredAddr *net.Addr, secondPredAddr *net.Addr, thirdPredAddr *net.Addr) {
 	// If the new predecessor is not the previous predessor's predecessor,
 	// then start the Bootstrap transfer to the newly joined node
+
+	// Not sure if can compare stuff like this.
+	pred1Equal := firstPredAddr == predecessors[0].addr
+	pred2Equal := secondPredAddr == predecessors[1].addr
+	pred3Equal := thirdPredAddr == predecessors[2].addr
+	// If none of the previous three have changed, no need to update.
+	if pred1Equal && pred2Equal && pred3Equal {
+		return
+	}
+	// Will need to handle case by case basis - lots of different scenarios.
+
+	// Case 1: First and second predecessors stay the same, third predecessor is different
+	// Action: Drop appropriate keys
+	if pred1Equal && pred2Equal {
+		// callSweeper()
+	}
 
 	// TODO: handle case second predecessor stays the same but its key range changes
 	// - drop keys we are no longer responsible for
