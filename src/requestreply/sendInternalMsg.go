@@ -28,12 +28,6 @@ func SendMembershipRequest(payload []byte, ip string, port int) error {
 	return nil
 }
 
-// //SendTransferRequest - a successor sends a KV pair to a joining predecessor
-// func SendTransferRequest(payload []byte, addr *net.Addr) error {
-// 	sendUDPRequest(addr, payload, TRANSFER_REQ)
-// 	return nil
-// }
-
 //SendPingRequest - a simple ping
 func SendPingRequest(ip string, port int) error {
 	addr, err := util.GetAddr(ip, port)
@@ -64,6 +58,7 @@ func SendTransferFinished(payload []byte, addr *net.Addr) error {
 	return nil
 }
 
+//SendDataTransferMessage - sends a key-value pair (i.e. an internal PUT request)
 func SendDataTransferMessage(payload []byte, addr *net.Addr) error {
 	sendUDPRequest(addr, payload, DATA_TRANSFER)
 	return nil

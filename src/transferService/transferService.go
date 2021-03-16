@@ -17,12 +17,6 @@ import (
 Sends a TRANSFER_FINISHED when it's done
 */
 
-// TODO (Brennan): maybe?
-// Transfer all data with keys between minKey and maxKey
-// If minkey is nil, transfer everything before maxKey
-// If maxkey is nil, transfer everything after minKey
-// Can't both be nil
-
 func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
 
 	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
@@ -36,7 +30,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 		hashVal := util.Hash([]byte(key))
 
 		var shouldTransfer = false
-		// TODO(Brennan): update how we determine shouldTransfer
+		// TODO: verify if this wrap around works
 		if minKey > maxKey { // wrap around
 			shouldTransfer = hashVal >= minKey || maxKey >= hashVal
 		} else {
@@ -80,6 +74,6 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 		return err
 	}
 
-	err = kvstore.HandleInternalDataUpdate(kvRequest)
+	err = kvstore.InternalDataUpdate(kvRequest)
 	return err
 }

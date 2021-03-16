@@ -39,6 +39,5 @@ func bootstrapTransferFinishedHandler(memberStore *MemberStore) {
 
 	memberStore.lock.RLock()
 	memberStore.members[memberStore.position].Status = STATUS_NORMAL
-	// memberStore_.sortAndUpdateIdx()
 	memberStore.lock.RUnlock()
 }

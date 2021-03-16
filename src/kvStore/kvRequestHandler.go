@@ -198,7 +198,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	return resPayload, nil, isUpdate
 }
 
-func HandleInternalDataUpdate(kvRequest *pb.KVRequest) error {
+func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 	cmd := kvRequest.Command
 	key := string(kvRequest.Key)
 
