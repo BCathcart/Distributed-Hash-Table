@@ -24,14 +24,14 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 	respond := true
 
 	switch msg.InternalID {
-	case MEMBERSHIP_REQUEST:
+	case requestreply.MEMBERSHIP_REQUEST:
 		membershipReqHandler(addr, msg)
 		respond = false
 
-	case HEARTBEAT:
+	case requestreply.HEARTBEAT:
 		heartbeatHandler(addr, msg)
 
-	case TRANSFER_FINISHED:
+	case requestreply.TRANSFER_FINISHED:
 		memberStore_.lock.RLock()
 		status := memberStore_.members[memberStore_.position].Status
 		memberStore_.lock.RUnlock()
@@ -42,13 +42,13 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 			chainReplication.HandleTransferFinishedReq(&addr)
 		}
 
-	case DATA_TRANSFER:
+	case requestreply.DATA_TRANSFER:
 		err = transferService.HandleDataMsg(addr, msg)
-		log.Println("ERROR: Could not handle data transfer message - ", err)
+		if err != nil {
+			log.Println("ERROR: Could not handle data transfer message - ", err)
+		}
 
-		// resPayload, err = transferRequestHandler(addr, msg)
-
-	case PING:
+	case requestreply.PING:
 		// Send nil payload back
 		log.Println("Got PINGed")
 
@@ -75,14 +75,6 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 	key := util.Hash(kvRequest.GetKey())
 
 	// TODO: handle case when the key is null
-
-	// If this node is bootstrapping and this is FORWARDED_CLIENT_REQ, then it automatically belongs to this node.
-	// TODO(Brennan): use DATA_TRANSFER type instead?
-	// if memberStore_.getCurrMember().Status == STATUS_BOOTSTRAPPING && msg.InternalID == requestreply.FORWARDED_CLIENT_REQ {
-	// 	log.Println(key, memberStore_.mykey, "keeping key sent by successor during bootstrap")
-	// 	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-	// 	return nil, addr, payload, err
-	// }
 
 	memberStore_.lock.RLock()
 	transferNdAddr := memberStore_.transferNodeAddr

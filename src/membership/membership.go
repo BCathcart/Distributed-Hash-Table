@@ -13,13 +13,6 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 )
 
-/* Internal Msg IDs */
-const MEMBERSHIP_REQUEST = 0x1
-const HEARTBEAT = 0x2
-const TRANSFER_FINISHED = 0x3
-const PING = 0x5
-const DATA_TRANSFER = 0x6
-
 /***** GOSSIP PROTOCOL *****/
 const STATUS_NORMAL = 0x1
 const STATUS_BOOTSTRAPPING = 0x2
@@ -82,30 +75,35 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Send heartbeat to the node requesting
 	gossipHeartbeat(&addr)
 
-	ipStr, portStr := util.GetIPPort(string(msg.Payload))
-	targetKey := util.GetNodeKey(ipStr, portStr)
+	targetIpStr, targetPortStr := util.GetIPPort(string(msg.Payload))
+	targetPort, _ := strconv.Atoi(targetPortStr)
+	targetKey := util.GetNodeKey(targetIpStr, targetPortStr)
 
 	memberStore_.lock.RLock()
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
-	isSuccessor := targetMemberIdx == memberStore_.position
 
-	if isSuccessor {
+	if targetMemberIdx == memberStore_.position {
 		predKey, _ := getPredecessor2(targetKey)
 		// curKey := memberStore_.getCurrMember().Key
 		memberStore_.lock.RUnlock()
 
+		transferAddr, err := util.GetAddr(targetIpStr, targetPort)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+
 		// Transfer everything between the new predecessor's key and the previous predecessor's key
-		if transferToBootstrappingPred(memberStore_, &addr, predKey, targetKey) == false {
+		if transferToBootstrappingPred(memberStore_, transferAddr, predKey, targetKey) == false {
 			log.Println("WARN: Ignoring membership request b/c a transfer is already in progress")
 		}
 	} else {
-		memberStore_.lock.Unlock()
+		memberStore_.lock.RUnlock()
 		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
 			log.Println("ERROR sending membership message to successor") // TODO more error handling
 		}
 	}
-
 }
 
 // When a member is found to be unavailable, remove it from the member list
@@ -113,19 +111,6 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
 	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
 }
-
-// TODO(Brennan): what is this for????
-// func transferRequestHandler(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-// 	// Unmarshal KVRequest
-// 	kvRequest := &pb.KVRequest{}
-// 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-// 	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-// 	return payload, err
-// }
 
 func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()

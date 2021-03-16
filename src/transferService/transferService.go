@@ -51,9 +51,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				continue
 			}
 
-			// send kv to predecessor using requestreply.SendTransferRequest (not sure this is what it's meant for)
-			// uses sendUDPRequest under the hood
-			err = requestreply.SendTransferRequest(serPayload, addr)
+			err = requestreply.SendDataTransferMessage(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
 			doesn't wait for response to delete from local kvStore

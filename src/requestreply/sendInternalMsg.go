@@ -28,11 +28,11 @@ func SendMembershipRequest(payload []byte, ip string, port int) error {
 	return nil
 }
 
-//SendTransferRequest - a successor sends a KV pair to a joining predecessor
-func SendTransferRequest(payload []byte, addr *net.Addr) error {
-	sendUDPRequest(addr, payload, FORWARDED_CLIENT_REQ)
-	return nil
-}
+// //SendTransferRequest - a successor sends a KV pair to a joining predecessor
+// func SendTransferRequest(payload []byte, addr *net.Addr) error {
+// 	sendUDPRequest(addr, payload, TRANSFER_REQ)
+// 	return nil
+// }
 
 //SendPingRequest - a simple ping
 func SendPingRequest(ip string, port int) error {
