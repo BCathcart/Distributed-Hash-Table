@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
@@ -53,17 +52,24 @@ which will eventually get forwarded to our node's successor.
 @param thisPort Current node's port
 */
 func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int32) {
-	// Send request to random node (from list of nodes)
-	randIdx := rand.Intn(len(otherMembers))
-	randAddr := otherMembers[randIdx]
-	localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
-	reqPayload := []byte(localAddrStr)
-	err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
-	if err != nil {
-		log.Println("Error sending membership message ")
+	var nodeStatus int32 = STATUS_BOOTSTRAPPING
+	for nodeStatus != STATUS_NORMAL {
+		// Send request to random node (from list of nodes)
+		randIdx := rand.Intn(len(otherMembers))
+		randAddr := otherMembers[randIdx]
+		localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
+		reqPayload := []byte(localAddrStr)
+		err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
+		if err != nil {
+			log.Println("ERROR sending membership message ")
+		}
+
+		// Make a new request every 5 seconds if a transfer hasn't finished
+		time.Sleep(5 * time.Second)
+		memberStore_.lock.RLock()
+		nodeStatus = memberStore_.members[memberStore_.position].Status
+		memberStore_.lock.RUnlock()
 	}
-	// TODO: For future milestones, Repeat this request periodically until receiving the TRANSFER_FINISHED message
-	// this would protect against nodes failing
 }
 
 /**
@@ -79,46 +85,27 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	ipStr, portStr := util.GetIPPort(string(msg.Payload))
 	targetKey := util.GetNodeKey(ipStr, portStr)
 
-	memberStore_.lock.Lock()
+	memberStore_.lock.RLock()
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
 	isSuccessor := targetMemberIdx == memberStore_.position
 
 	if isSuccessor {
-		memberStore_.transferNodeAddr = &addr
+		predKey, _ := getPredecessor2(targetKey)
 		// curKey := memberStore_.getCurrMember().Key
-		memberStore_.lock.Unlock()
+		memberStore_.lock.RUnlock()
 
-		// TODO: Transfer everything between the target key and the previous predecessor
-		// TODO: move this funcionality to replicationManager.NewBootstrappingPredecessor
-		go transferService.TransferKVStoreData(ipStr, portStr, nil, &targetKey, func() {
-			memberStore_.lock.Lock()
-			memberStore_.transferNodeAddr = nil
-			memberStore_.lock.Unlock()
-		})
+		// Transfer everything between the new predecessor's key and the previous predecessor's key
+		if transferToBootstrappingPred(memberStore_, &addr, predKey, targetKey) == false {
+			log.Println("WARN: Ignoring membership request b/c a transfer is already in progress")
+		}
 	} else {
 		memberStore_.lock.Unlock()
 		err := requestreply.SendMembershipRequest(msg.Payload, string(targetMember.Ip), int(targetMember.Port)) // TODO Don't know about return addr param
 		if err != nil {
-			log.Println("ERROR Sending membership message to successor") // TODO more error handling
+			log.Println("ERROR sending membership message to successor") // TODO more error handling
 		}
 	}
 
-}
-
-/**
-Membership protocol: after receiving the transfer finished from the successor node,
-sets status to normal
-*/
-func transferFinishedHandler(addr net.Addr, msg *pb.InternalMsg) {
-	log.Println("RECEIVED TRANSFER FINISHED MSG")
-
-	memberStore_.lock.RLock()
-	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
-	memberStore_.sortAndUpdateIdx()
-	memberStore_.lock.RUnlock()
-
-	// TODO: End timer and set status to "Normal"
-	// Nodes will now start sending requests directly to us rather than to our successor.
 }
 
 // When a member is found to be unavailable, remove it from the member list
@@ -173,7 +160,7 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	// If no other nodes are known, then assume this is the first node
 	// and this node simply waits to be contacted
 	if len(otherMembers) != 0 {
-		makeMembershipReq(otherMembers, ip, port)
+		go makeMembershipReq(otherMembers, ip, port)
 	}
 
 }

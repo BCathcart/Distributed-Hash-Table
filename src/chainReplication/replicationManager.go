@@ -2,10 +2,6 @@ package chainReplication
 
 import (
 	"net"
-
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"google.golang.org/protobuf/proto"
 )
 
 // TODO(Brennan): should add callback to reqreply layer so that
@@ -25,9 +21,9 @@ type successorNode struct {
 // TODO: need reference to this nodes KV store?
 
 type predecessorNode struct {
-	keys       keyRange
-	addr       *net.Addr
-	transfered bool
+	keys        keyRange
+	addr        *net.Addr
+	transferred bool
 	// TODO: add kvStore instance here?
 }
 
@@ -151,13 +147,8 @@ func HandleDataTransferReq() {
 }
 
 // TRANSFER_FINISHED internal msg type
-func HandleTransferFinishedReq() {
+func HandleTransferFinishedReq(addr *net.Addr) {
 	// Remove the address from pendingRcvingTransfers
-}
-
-// DATA_TRANSFER internal msg type
-func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-	return ServiceRequest(msg)
 }
 
 // FORWARDED_CHAIN_UPDATE msg type
@@ -178,16 +169,4 @@ func HandleClientRequest() {
 	// GET responded to here if they correspond to predecessors[0], and
 
 	// Any other type of client request gets handled here
-}
-
-func ServiceRequest(msg *pb.InternalMsg) ([]byte, error) {
-	// Unmarshal KVRequest
-	kvRequest := &pb.KVRequest{}
-	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-	return payload, err
 }

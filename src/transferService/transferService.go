@@ -2,11 +2,13 @@ package transferService
 
 import (
 	"log"
-	"strconv"
+	"net"
 
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"google.golang.org/protobuf/proto"
 )
 
 /* Membership protocol - transfers the necessary data to a joined node
@@ -15,15 +17,15 @@ import (
 Sends a TRANSFER_FINISHED when it's done
 */
 
+// TODO (Brennan): maybe?
 // Transfer all data with keys between minKey and maxKey
 // If minkey is nil, transfer everything before maxKey
 // If maxkey is nil, transfer everything after minKey
 // Can't both be nil
 
-func TransferKVStoreData(ipStr string, portStr string, minKey *uint32, maxKey *uint32, transferFinishedCallback func()) {
+func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
 
-	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", ipStr, ":", portStr)
-	portInt, _ := strconv.Atoi(portStr)
+	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
 	localKeyList := kvstore.GetKeyList()
 
 	// TODO a map to hold the keys that need to be transferred and whether they've been successfully sent to predecessor
@@ -35,10 +37,10 @@ func TransferKVStoreData(ipStr string, portStr string, minKey *uint32, maxKey *u
 
 		var shouldTransfer = false
 		// TODO(Brennan): update how we determine shouldTransfer
-		if predecessorKey > curKey { // wrap around
-			shouldTransfer = hashVal >= predecessorKey || curKey >= hashVal
+		if minKey > maxKey { // wrap around
+			shouldTransfer = hashVal >= minKey || maxKey >= hashVal
 		} else {
-			shouldTransfer = hashVal <= predecessorKey
+			shouldTransfer = hashVal <= minKey
 		}
 
 		if shouldTransfer {
@@ -51,7 +53,7 @@ func TransferKVStoreData(ipStr string, portStr string, minKey *uint32, maxKey *u
 
 			// send kv to predecessor using requestreply.SendTransferRequest (not sure this is what it's meant for)
 			// uses sendUDPRequest under the hood
-			err = requestreply.SendTransferRequest(serPayload, ipStr, portInt)
+			err = requestreply.SendTransferRequest(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
 			doesn't wait for response to delete from local kvStore
@@ -64,9 +66,22 @@ func TransferKVStoreData(ipStr string, portStr string, minKey *uint32, maxKey *u
 		}
 	}
 
-	log.Println("SENDING TRANSFER FINISHED TO PREDECESSOR WITH ADDRESS: ", ipStr, ":", portStr)
+	log.Println("SENDING TRANSFER FINISHED TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
 
-	_ = requestreply.SendTransferFinished([]byte(""), ipStr, portInt)
+	_ = requestreply.SendTransferFinished([]byte(""), addr)
 
 	transferFinishedCallback()
+}
+
+// DATA_TRANSFER internal msg type
+func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
+	// Unmarshal KVRequest
+	kvRequest := &pb.KVRequest{}
+	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+	if err != nil {
+		return err
+	}
+
+	err = kvstore.HandleInternalDataUpdate(kvRequest)
+	return err
 }
