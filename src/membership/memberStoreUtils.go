@@ -36,27 +36,42 @@ func searchForSuccessor(targetKey uint32, exceptionKey *uint32) (*pb.Member, int
 	return member, 0
 }
 
-/**
-Legacy function, current function (getPredecessor2) handles bootstrapping nodes.
-*/
-func getPredecessor() (uint32, error) {
-
-	if len(memberStore_.members) == 1 {
-		return 0, errors.New("can't find predecessor")
+/*
+* Search for the tail of the chain with the head at the given position
+* If the number of STATUS_NORMAL members is less than the default length
+* of the chain (3), searchForTail returns the sucessor (if membership count is 2)
+* or the head itself (if membership count is 1)
+ */
+func searchForTail(head int) (*pb.Member, int) {
+	chain := make([]int, 3)
+	chain[0] = head
+	count := 1
+	for i := head + 1; i != head; i++ {
+		if i == len(memberStore_.members) {
+			i = 0
+			if i == head {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			chain[count] = i
+			count++
+			if count == 3 {
+				return member, i
+			}
+		}
 	}
+	// there were not enough STATUS_NORMAL members in the ring
+	idx := chain[count-1]
 
-	numMembers := len(memberStore_.members)
-	predecessorPosition := (memberStore_.position + numMembers - 1) % numMembers // Handles wrap around
-	predecessor := memberStore_.members[predecessorPosition]
-	key := predecessor.Key
-
-	return key, nil
+	return memberStore_.members[idx], idx
 }
 
 /**
 Based on a target key, returns the first node before
 */
-func getPredecessor2(targetKey uint32) (uint32, error) {
+func getPredecessor(targetKey uint32) (uint32, error) {
 	for i := len(memberStore_.members) - 1; i >= 0; i-- {
 		// skip over "Bootstrapping" nodes
 		if targetKey < memberStore_.members[i].Key && memberStore_.members[i].Status == STATUS_NORMAL {
@@ -75,39 +90,12 @@ func getPredecessor2(targetKey uint32) (uint32, error) {
 	return 0, errors.New("can't find predecessor")
 }
 
-/**
-Legacy function: returns true/false boolean based on whether the current node
-is a successor of a key.
-
-Instead, we call searchForSuccessor function and check the index.
-*/
-func isSuccessor(targetKey uint32) (bool, error) {
-	if memberStore_.getLength() <= 1 {
-		return true, nil
-	}
+/* GetMembershipCount returns the number of members in  the membership list with STATUS_NORMAL */
+func GetMembershipCount() int {
 	memberStore_.lock.RLock()
 	defer memberStore_.lock.RUnlock()
-	predVal, err := getPredecessor2(targetKey)
 
-	if err != nil {
-		return false, err
-	}
-
-	/*
-		Need to check for wraparound cases.
-		e.g. if maxRingValue = 100, curNode = 10, predecessor = 90
-		(which will be the biggest node), keys will get transferred if node is < curNode (0 to 9)
-		or bigger than biggest node (91 to 99)
-	*/
-	if memberStore_.isFirstNode() {
-		return targetKey < memberStore_.mykey || targetKey > predVal, nil
-	}
-	// Non edge case: just needs to be between current node and its predecessor.
-	return targetKey < memberStore_.mykey && targetKey > predVal, nil
-}
-
-func GetMembershipCount() int {
-	return memberStore_.getLength()
+	return memberStore_.getCountStatusNormal()
 }
 
 /**

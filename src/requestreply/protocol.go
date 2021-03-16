@@ -37,8 +37,8 @@ const MAX_BUFFER_SIZE = 11000
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
  */
-func RequestReplyLayerInit(connection *net.PacketConn,
-	externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error),
+func Init(connection *net.PacketConn,
+	externalReqHandler func(*pb.InternalMsg) (net.Addr, bool, []byte, error),
 	internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error),
 	nodeUnavailableHandler func(addr *net.Addr)) {
 
@@ -208,7 +208,6 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 * @param reqMsg The message to send.
  */
 func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
-	//log.Println("Forwarding Request--------------")
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
@@ -261,10 +260,13 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// TODO: handle DATA_TRANSFER case
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
-		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
+		fwdAddr, respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
 			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 			return
+		}
+		if fwdAddr != nil {
+			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg)
 		}
 
 		if respond {
@@ -273,8 +275,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		return
 	}
 
-	// TODO: If key corresponds to this node: Pass message to handler
-	fwdAddr, returnAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
+	fwdAddr, isForwardedChainUpdate, payload, err := getExternalReqHandler()(reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
@@ -282,10 +283,14 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID != EXTERNAL_REQUEST)
 	} else {
 		// Forward request if key doesn't correspond to this node:
-		forwardUDPRequest(&fwdAddr, &returnAddr, reqMsg)
+		fwdMsg := reqMsg
+		if isForwardedChainUpdate {
+			fwdMsg.InternalID = FORWARDED_CHAIN_UPDATE
+		}
+		forwardUDPRequest(fwdAddr, &returnAddr, fwdMsg)
 	}
 
 }

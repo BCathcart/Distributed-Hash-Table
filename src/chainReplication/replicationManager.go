@@ -1,10 +1,13 @@
 package chainReplication
 
 import (
+	"errors"
+	"log"
 	"net"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -37,6 +40,11 @@ var successor successorNode
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
 var pendingRcvingTransfers []*net.Addr
+var myrange keyRange
+
+func (k keyRange) includesKey(key uint32) bool {
+	return key <= k.high && key >= k.low
+}
 
 func init() {
 	// Init successor and predecessors
@@ -145,23 +153,60 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
 }
 
 // FORWARDED_CHAIN_UPDATE msg type
-func forwardUpdateThroughChain() {
-	// If this isn't the tail, forward to the successor
+func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) {
+	// Unmarshal KVRequest
+	kvRequest := &pb.KVRequest{}
+	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+	if err != nil {
+		return nil, nil, err
+	}
+	key := util.Hash(kvRequest.GetKey())
+	// Sanity check
+	if !predecessors[0].keys.includesKey(key) && !predecessors[1].keys.includesKey(key) {
+		log.Println("HandleForwardedChainUpdate: how did we get here?")
+		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE message received at wrong node")
+	}
+
+	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if errcode != kvstore.OK || predecessors[0].keys.includesKey(key) {
+		// don't forward if this is the tail or if the request failed
+		return nil, payload, err
+	}
+	// otherwise forward the update to the successor
+	return successor.addr, nil, nil
 }
 
-// FORWARDED_CHAIN_UPDATE msg type
-func handleForwardedChainUpdate() {
-	// If this is the tail, respond
-}
+/**
+* @return the forward address if the request is to be forwarded to the successor, nil otherwise
+* @return The payload of the reply message to be sent
+* @return True if the client request belongs to this node, false otherwise
+* @return the error in case of failure
+ */
+func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, error) {
+	keyByte := kvRequest.Key
+	if keyByte == nil || !kvstore.IsKVRequest(kvRequest) {
+		// Any type of client request besides key-value requests gets handled here
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		return nil, payload, true, err
+	}
+	key := util.Hash(keyByte)
 
-func HandleClientRequest() {
-	// If it belongs to this node
+	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
+	if myrange.includesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		if errcode != kvstore.OK {
+			// don't forward invalid/failed requests
+			return nil, payload, true, err
+		}
+		return successor.addr, nil, true, err
+	}
 
-	// Updates (PUT and REMOVE) performed here and then forwarded
-
-	// GET responded to here if they correspond to predecessors[0], and
-
-	// Any other type of client request gets handled here
+	// GET responded to here if they correspond to predecessors[0]
+	if predecessors[0].keys.includesKey(key) && kvstore.IsGetRequest(kvRequest) {
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		return nil, payload, true, err
+	}
+	return nil, nil, false, nil
 }
 
 func ServiceRequest(msg *pb.InternalMsg) ([]byte, error) {

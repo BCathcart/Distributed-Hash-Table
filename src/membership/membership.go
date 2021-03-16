@@ -14,13 +14,6 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 )
 
-/* Internal Msg IDs */
-const MEMBERSHIP_REQUEST = 0x1
-const HEARTBEAT = 0x2
-const TRANSFER_FINISHED = 0x3
-const PING = 0x5
-const DATA_TRANSFER = 0x6
-
 /***** GOSSIP PROTOCOL *****/
 const STATUS_NORMAL = 0x1
 const STATUS_BOOTSTRAPPING = 0x2
@@ -140,7 +133,7 @@ func MemberUnavailableHandler(addr *net.Addr) {
 // 	return payload, err
 // }
 
-func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
+func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
 	key := util.GetNodeKey(ip, strconv.Itoa(int(port)))

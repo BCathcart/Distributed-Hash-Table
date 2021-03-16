@@ -142,10 +142,13 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	return member
 }
 
-func (ms *MemberStore) getLength() int {
-	ms.lock.RLock()
-	count := len(ms.members)
-	ms.lock.RUnlock()
+func (ms *MemberStore) getCountStatusNormal() int {
+	count := 0
+	for i := 0; i < len(ms.members); i++ {
+		if memberStore_.members[i].Status == STATUS_NORMAL {
+			count++
+		}
+	}
 	return count
 }
 

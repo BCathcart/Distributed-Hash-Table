@@ -89,9 +89,9 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	we only restrict PUT and GET requests. REMOVE and WIPEOUT may increase
 	the memory momentarily, but the benifit of the freed up space outweighs
 	the momentary costs. */
-	cmd := kvRequest.Command
-	key := string(kvRequest.Key)
-	value := kvRequest.Value
+	cmd := kvRequest.GetCommand()
+	key := string(kvRequest.GetKey())
+	value := kvRequest.GetValue()
 	var version int32
 	if kvRequest.Version != nil {
 		version = *kvRequest.Version
@@ -99,7 +99,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		version = 0
 	}
 
-	log.Println("KEY: ", kvRequest.Key)
+	log.Println("KEY: ", kvRequest.GetKey())
 
 	// Determine action based on the command
 	switch cmd {
@@ -194,10 +194,32 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	return resPayload, nil, errCode
 }
 
-/**
-Used for debugging purposes to ensure keys are being distributed evenly:
-prints out number of elements in cache
-*/
+/*
+* PrintKVStoreSize prints out the size of the kvstore
+ */
 func PrintKVStoreSize() {
 	log.Println("SIZE: ", kvStore_.GetSize())
+}
+
+/**
+* IsGetRequest returns true if the KVRequest is a GET request
+ */
+func IsGetRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == GET
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is an update, i.e. PUT or REMOVE request
+ */
+func IsUpdateRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is a key-value request (i.e. PUT, GET, REMOVE, or WIPEOUT)
+ */
+func IsKVRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT || kvrequest.GetCommand() == GET ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
 }
