@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"errors"
 	"log"
 	"os"
 	"runtime"
@@ -80,6 +81,7 @@ func handleOverload() *pb.KVResponse {
 * @param serializedReq The serialized KVRequest.
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
+* @return the errorcode
  */
 func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
 	var errCode uint32
@@ -192,6 +194,43 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	}
 
 	return resPayload, nil, errCode
+}
+
+func InternalDataUpdate(kvRequest *pb.KVRequest) error {
+	cmd := kvRequest.Command
+	key := string(kvRequest.Key)
+
+	var errCode uint32
+	switch cmd {
+	case PUT:
+		var version int32
+		if kvRequest.Version != nil {
+			version = *kvRequest.Version
+		} else {
+			version = 0
+		}
+
+		if memUsage() > MAX_MEM_USAGE {
+			handleOverload()
+			return errors.New("Overload")
+		} else {
+			errCode = kvStore_.Put(key, kvRequest.Value, version)
+		}
+
+	case REMOVE:
+		kvStore_.lock.Lock()
+		errCode = kvStore_.Remove(key)
+		kvStore_.lock.Unlock()
+
+	default:
+		return errors.New("Command is not an update")
+	}
+
+	if errCode != OK {
+		return errors.New("Data update failed with error code: " + strconv.Itoa(int(errCode)))
+	}
+
+	return nil
 }
 
 /*

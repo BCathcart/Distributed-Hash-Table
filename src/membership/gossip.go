@@ -39,6 +39,10 @@ func gossipHeartbeat(addr *net.Addr) {
 	var port int
 	if addr == nil {
 		member := memberStore_.getRandMember()
+		if member == nil {
+			log.Println("ERROR: no members to send to")
+			return
+		}
 		ip = string(member.GetIp())
 		port = int(member.GetPort())
 	} else {

@@ -28,14 +28,15 @@ type successorNode struct {
 // TODO: need reference to this nodes KV store?
 
 type predecessorNode struct {
-	keys       keyRange
-	addr       *net.Addr
-	transfered bool
+	keys        keyRange
+	addr        *net.Addr
+	transferred bool
 	// TODO: add kvStore instance here?
 }
 
-var predecessors []predecessorNode // 0 = first, 1 = second
-var successor successorNode
+// 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
+var predecessors [3]*predecessorNode
+var successor *successorNode
 
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
@@ -48,7 +49,6 @@ func (k keyRange) includesKey(key uint32) bool {
 
 func init() {
 	// Init successor and predecessors
-
 	prepareForBootstrapTransfer(nil)
 }
 
@@ -62,9 +62,25 @@ func NewBootstrappingPredecessor(addr *net.Addr) {
 }
 
 // TODO: may need to update both predecessors at once
-func UpdatePredecessors(firstPredAddr *net.Addr, secondPredAddr *net.Addr, minKey uint32, middleKey uint32, maxKey uint32) {
+func UpdatePredecessors(firstPredAddr *net.Addr, secondPredAddr *net.Addr, thirdPredAddr *net.Addr) {
 	// If the new predecessor is not the previous predessor's predecessor,
 	// then start the Bootstrap transfer to the newly joined node
+
+	// Not sure if can compare stuff like this.
+	pred1Equal := firstPredAddr == predecessors[0].addr
+	pred2Equal := secondPredAddr == predecessors[1].addr
+	pred3Equal := thirdPredAddr == predecessors[2].addr
+	// If none of the previous three have changed, no need to update.
+	if pred1Equal && pred2Equal && pred3Equal {
+		return
+	}
+	// Will need to handle case by case basis - lots of different scenarios.
+
+	// Case 1: First and second predecessors stay the same, third predecessor is different
+	// Action: Drop appropriate keys
+	if pred1Equal && pred2Equal {
+		// callSweeper()
+	}
 
 	// TODO: handle case second predecessor stays the same but its key range changes
 	// - drop keys we are no longer responsible for
@@ -143,13 +159,8 @@ func HandleDataTransferReq() {
 }
 
 // TRANSFER_FINISHED internal msg type
-func HandleTransferFinishedReq() {
+func HandleTransferFinishedReq(addr *net.Addr) {
 	// Remove the address from pendingRcvingTransfers
-}
-
-// DATA_TRANSFER internal msg type
-func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-	return ServiceRequest(msg)
 }
 
 // FORWARDED_CHAIN_UPDATE msg type
@@ -207,16 +218,4 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 		return nil, payload, true, err
 	}
 	return nil, nil, false, nil
-}
-
-func ServiceRequest(msg *pb.InternalMsg) ([]byte, error) {
-	// Unmarshal KVRequest
-	kvRequest := &pb.KVRequest{}
-	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-	return payload, err
 }
