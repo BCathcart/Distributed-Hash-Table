@@ -20,6 +20,23 @@ func tickHeartbeat() {
 
 // Sends the entire member array in the MemberStore.
 func gossipHeartbeat(addr *net.Addr) {
+
+	// Pick random member if an address is not provided
+	var ip string
+	var port int
+	if addr == nil {
+		member := memberStore_.getRandMember()
+		if member == nil {
+			log.Println("No members to send to")
+			return
+		}
+		ip = string(member.GetIp())
+		port = int(member.GetPort())
+	} else {
+		ip = (*addr).(*net.UDPAddr).IP.String()
+		port = (*addr).(*net.UDPAddr).Port
+	}
+
 	// Package MemberStore.members array
 	members := &pb.Members{}
 	memberStore_.lock.RLock()
@@ -32,22 +49,6 @@ func gossipHeartbeat(addr *net.Addr) {
 	if err != nil {
 		log.Println(err)
 		return
-	}
-
-	// Pick random member if an address is not provided
-	var ip string
-	var port int
-	if addr == nil {
-		member := memberStore_.getRandMember()
-		if member == nil {
-			log.Println("ERROR: no members to send to")
-			return
-		}
-		ip = string(member.GetIp())
-		port = int(member.GetPort())
-	} else {
-		ip = (*addr).(*net.UDPAddr).IP.String()
-		port = (*addr).(*net.UDPAddr).Port
 	}
 
 	err = requestreply.SendHeartbeatMessage(gspPayload, ip, port)

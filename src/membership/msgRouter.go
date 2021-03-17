@@ -81,11 +81,17 @@ func ExternalMsgHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 	}
 	fwdAddr, payload, isMine, err := chainReplication.HandleClientRequest(kvRequest)
 	if isMine {
-		if kvstore.IsUpdateRequest(kvrequest) {
-			requestreply.SendDataTransferMessage(msg.GetPayload(), memberStore_.transferNodeAddr)
+		if kvstore.IsUpdateRequest(kvRequest) {
+			// Forward any updates to the bootstrapping predecessor to keep sequential consistency
+			memberStore_.lock.RLock()
+			transferNodeAddr := memberStore_.transferNodeAddr
+			memberStore_.lock.RUnlock()
+			if transferNodeAddr != nil {
+				requestreply.SendDataTransferMessage(msg.GetPayload(), memberStore_.transferNodeAddr)
+			}
 		}
 		// the request was handled by this node
-		return *fwdAddr, true, payload, err
+		return fwdAddr, true, payload, err
 	}
 	// the request does not belong to this node, route it to the right node
 	key := util.Hash(kvRequest.GetKey())
@@ -102,17 +108,6 @@ func ExternalMsgHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 	memberStore_.lock.RUnlock()
 
 	fwdAddr = nil
-
-	if transferRcvNdKey != nil && *transferRcvNdKey == member.Key {
-		log.Println("transferRcvNdKey: This index: ", thisMemberPos, ", Successor index: ", pos)
-		payload, err, isUpdate := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-
-		// Forward any updates to the bootstrapping predecessor to keep sequential consistency
-		if isUpdate {
-			requestreply.SendDataTransferMessage(msg.GetPayload(), transferNdAddr)
-		}
-	}
-	***************************************************************************************************/
 
 	if kvstore.IsGetRequest(kvRequest) {
 		fwdAddr, err = util.GetAddr(string(tail.GetIp()), int(tail.GetPort()))

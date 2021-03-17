@@ -83,7 +83,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
 
 	if targetMemberIdx == memberStore_.position {
-		predKey, _ := getPredecessor2(targetKey)
+		predKey, _ := getPredecessor(targetKey)
 		// curKey := memberStore_.getCurrMember().Key
 		memberStore_.lock.RUnlock()
 
@@ -134,9 +134,7 @@ func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int
 		for {
 			<-ticker.C
 			tickHeartbeat()
-			if /* memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && */ memberStore_.getLength() != 1 {
-				gossipHeartbeat(nil)
-			}
+			gossipHeartbeat(nil)
 		}
 	}()
 
