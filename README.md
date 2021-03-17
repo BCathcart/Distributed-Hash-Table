@@ -5,7 +5,7 @@ The CPEN 431 Mini-Project - DHT using Consistent Hashing Test Edit
 Name | github user
 ------------ | -------------
 Brennan Cathcart | BCathcart
-Shay Tanne | rozsa
+Rozhan Akhound-Sadegh | rozsa
 Shay Tanne | shaytanne
 Thomas Broatch | tbroatch98
 
