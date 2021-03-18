@@ -41,6 +41,18 @@ type predecessorNode struct {
 	// TODO: add kvStore instance here?
 }
 
+type transferFunc func(addr *net.Addr, lowKey uint32, highKey uint32)
+type sweeperFunc func(lowKey uint32, highKey uint32)
+
+// Replace with actual transfer / sweeper functions when merging with shay & brennan code
+func dummyTransfer(addr *net.Addr, lowKey uint32, highKey uint32) {
+	log.Printf("Called Transfer function with range [%v, %v], addr, %v \n", lowKey, highKey, (*addr).String())
+}
+
+func dummySweeper(lowKey uint32, highKey uint32) {
+	log.Printf("Called Sweeper function with range [%v, %v]\n", lowKey, highKey)
+}
+
 // 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
 var predecessors [3]*predecessorNode
 var successor *successorNode
@@ -105,22 +117,6 @@ func getPredKey(predNode *predecessorNode) uint32 {
 	return predNode.keys.high
 }
 
-//func updatePredecessor(newPredAddr *net.Addr, idx int) {
-//	if newPredAddr == nil {
-//		predecessors[idx] = nil
-//	} else {
-//		newPredKey := getPredKey(newPredAddr)
-//		newPredNode := &predecessorNode{
-//			addr: newPredAddr,
-//			keys: keyRange{high: newPredKey, low: thisKey},
-//		}
-//		predecessors[idx] = newPredNode
-//		if idx != 0 {
-//			predecessors[idx-1].keys.low = newPredKey
-//		}
-//	}
-//}
-
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	mykeys.high = key
@@ -140,8 +136,8 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			break
 		}
 	}
-	checkPredecessors(newPredecessors)
-	predecessors = newPredecessors // TODO: Not sure if I can do this, seems a bit hacky
+	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
+	predecessors = newPredecessors                                  // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
 		mykeys.low = newPredecessors[0].keys.high + 1
 	}
@@ -149,6 +145,15 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	// for i := 0; i < 2; i++ {
 	// 	if predecessors[i] != nil {
 	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.low, predecessors[i].keys.high)
+}
+
+func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) bool {
+	if newPred == nil || oldPred == nil {
+		return newPred == oldPred
+	}
+	// Only check the "high" range of the keys. A change of the "low" indicates the node
+	// Has a new predecessor, but not necessarily that the node itself has changed.
+	return newPred.keys.high == oldPred.keys.high
 }
 
 /*
@@ -167,17 +172,8 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	newPredAddr2 and newPredAddr3 must also be nil.
 */
 
-func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) bool {
-	if newPred == nil || oldPred == nil {
-		return newPred == oldPred
-	}
-	// Only check the "high" range of the keys. A change of the "low" indicates the node
-	// Has a new predecessor, but not necessarily that the node itself has changed.
-	return newPred.keys.high == oldPred.keys.high
-}
-
 //func checkPredecessors(newPredAddr1 *net.Addr, newPredAddr2 *net.Addr, newPredAddr3 *net.Addr) {
-func checkPredecessors(newPredecessors [3]*predecessorNode) {
+func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transferFunc, sweepCache sweeperFunc) {
 	// Converting addresses to equivalent keys.
 	//oldPredAddr1, oldPredAddr2, oldPredAddr3 := getPredAddr(0), getPredAddr(1), getPredAddr(2)
 	oldPred1, oldPred2, oldPred3 := predecessors[0], predecessors[1], predecessors[2]
@@ -200,6 +196,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode) {
 		// New node has joined
 		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
 			// TODO: sweepCache(oldPredKey3, newPredKey3)
+			sweepCache(newPred2.keys.low, newPred2.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 		}
@@ -215,10 +212,11 @@ func checkPredecessors(newPredecessors [3]*predecessorNode) {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			// TODO: sweepCache(oldPredKey3, oldPredKey2)
+			sweepCache(newPred2.keys.low, newPred2.keys.high)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
-			// TODO: Transfer keys to successor between (oldPredKey3, oldPredKey2).
-			sendDataTransferReq(oldPred2.addr)
+			transferKeys(successor.addr, oldPred2.keys.high, oldPred2.keys.low)
+			//sendDataTransferReq(oldPred2.addr)
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
@@ -229,15 +227,21 @@ func checkPredecessors(newPredecessors [3]*predecessorNode) {
 			return
 		}
 		if util.BetweenKeys(newPred1.keys.high, oldPred1.keys.high, mykeys.high) { // New node has joined
-			// TODO: sweepCache(oldPredKey3, oldPredKey2) + bootstrap transfer?
+			// TODO: bootstrap transfer?
+			if oldPred2 != nil {
+				sweepCache(oldPred2.keys.low, oldPred2.keys.high)
+			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
-			// TODO: Transfer keys to successor between (oldPredKey3, oldPredKey2).
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			if oldPred2 != nil {
+				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
-			// TODO: Transfer keys to successor between (oldPredKey3, oldPredKey2).
-			// 	Should also transfer keys between (newPredKey3, oldPredKey2). With
-			// 	our current architecture this is not possible since we do not yet
-			//	have those keys.
+			if oldPred2 != nil {
+				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+			}
+			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
+			// 	our current architecture this is not possible since we do not yet have those keys.
 			log.Println("TWO NODES FAILED SIMULTANEOUSLY.")
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 		} else {
