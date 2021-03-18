@@ -1,6 +1,7 @@
 package chainReplication
 
 import (
+	"errors"
 	"log"
 	"net"
 
@@ -33,12 +34,10 @@ type successorNode struct {
 
 // TODO: need reference to this nodes KV store?
 
-// The key field is redundant as our key is calculated by taking the crc32 of the IP/port string, however storing
-// simplifies the code.
 type predecessorNode struct {
-	keys       keyRange
-	addr       *net.Addr
-	transfered bool
+	keys        keyRange
+	addr        *net.Addr
+	transferred bool
 	// TODO: add kvStore instance here?
 }
 
@@ -50,8 +49,33 @@ var thisKey uint32
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
 var pendingRcvingTransfers []*net.Addr
+var mykeys keyRange
 
-func init() {
+func (k keyRange) includesKey(key uint32) bool {
+	if k.low < k.high {
+		return key <= k.high && key >= k.low
+	}
+	return key >= k.low || key <= k.high
+}
+
+// @return the keyrange for the HEAD of the current chain
+func getHeadKeys() keyRange {
+	head := predecessors[1]
+	if head == nil {
+		head = predecessors[0]
+	}
+	headkeys := mykeys
+	if head != nil {
+		//DEBUGGING
+		log.Println("the head is", (*head.addr).String(), "\n")
+		headkeys = head.keys
+	}
+	return headkeys
+}
+
+func Init(keylow uint32, keyhigh uint32) {
+	mykeys.low = keylow
+	mykeys.high = keyhigh
 	// Init successor and predecessors
 	prepareForBootstrapTransfer(nil)
 }
@@ -222,10 +246,51 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32, isNewMemb
 		// If the new successor already existed (previous successor failed),
 		// only need to transfer the second predecessor's keys
 		sendDataTransferReq(succAddr)
+// TODO: may need to update both predecessors at once
+func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
+	for i := 0; i < 2; i++ {
+		if addr[i] != nil {
+			predecessors[i] = &predecessorNode{}
+			predecessors[i].addr = addr[i]
+			predecessors[i].keys.high = keys[i]
+			if addr[i+1] != nil {
+				predecessors[i].keys.low = keys[i+1] + 1
+			} else {
+				predecessors[i].keys.low = key + 1
+			}
+		} else {
+			predecessors[i] = nil
+			break
+		}
+	}
+	if predecessors[0] != nil {
+		mykeys.high = key
+		mykeys.low = predecessors[0].keys.high + 1
+	}
+
+	// for i := 0; i < 2; i++ {
+	// 	if predecessors[i] != nil {
+	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.low, predecessors[i].keys.high)
 
 	}
 
-	// uUpdate successor
+func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
+	// isNewMember := false
+	// if isNewMember {
+	// 	// If the new successor joined, need to transfer first and second predecessor keys
+	// 	sendDataTransferReq(succAddr)
+
+	// } else {
+	// 	// If the new successor already existed (previous successor failed),
+	// 	// only need to transfer the second predecessor's keys
+	// 	sendDataTransferReq(succAddr)
+	// }
+
+	// Update successor
+	if succAddr == nil {
+		successor = nil
+	}
+	successor = &successorNode{addr: succAddr, keys: keyRange{low: minKey, high: maxKey}}
 }
 
 func startBootstrapTransfer(predAddr *net.Addr) {
@@ -257,43 +322,68 @@ func HandleDataTransferReq() {
 }
 
 // TRANSFER_FINISHED internal msg type
-func HandleTransferFinishedReq() {
+func HandleTransferFinishedReq(addr *net.Addr) {
 	// Remove the address from pendingRcvingTransfers
 }
 
-// DATA_TRANSFER internal msg type
-func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) ([]byte, error) {
-	return ServiceRequest(msg)
-}
-
 // FORWARDED_CHAIN_UPDATE msg type
-func forwardUpdateThroughChain() {
-	// If this isn't the tail, forward to the successor
-}
-
-// FORWARDED_CHAIN_UPDATE msg type
-func handleForwardedChainUpdate() {
-	// If this is the tail, respond
-}
-
-func HandleClientRequest() {
-	// If it belongs to this node
-
-	// Updates (PUT and REMOVE) performed here and then forwarded
-
-	// GET responded to here if they correspond to predecessors[0], and
-
-	// Any other type of client request gets handled here
-}
-
-func ServiceRequest(msg *pb.InternalMsg) ([]byte, error) {
+func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) {
+	log.Println("Received Forwarded Chain update")
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	key := util.Hash(kvRequest.GetKey())
+	// Sanity check
+	if !predecessors[0].keys.includesKey(key) && !predecessors[1].keys.includesKey(key) {
+		log.Println("HandleForwardedChainUpdate: how did we get here?")
+		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE message received at wrong node")
 	}
 
-	payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-	return payload, err
+	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if errcode != kvstore.OK || getHeadKeys().includesKey(key) {
+		// don't forward if this is the tail or if the request failed
+		log.Println("Replying to Forwarded Chain update")
+
+		return nil, payload, err
+	}
+	// otherwise forward the update to the successor
+	log.Println("Forwarding Chain update to", (*successor.addr).String())
+
+	return successor.addr, nil, nil
+}
+
+/**
+* @return the forward address if the request is to be forwarded to the successor, nil otherwise
+* @return The payload of the reply message to be sent
+* @return True if the client request belongs to this node, false otherwise
+* @return the error in case of failure
+ */
+func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, error) {
+	keyByte := kvRequest.Key
+	if keyByte == nil || !kvstore.IsKVRequest(kvRequest) {
+		// Any type of client request besides key-value requests gets handled here
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		return nil, payload, true, err
+	}
+	key := util.Hash(keyByte)
+
+	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
+	if mykeys.includesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		if errcode != kvstore.OK || successor == nil {
+			// don't forward invalid/failed requests
+			return nil, payload, true, err
+		}
+		return successor.addr, nil, true, err
+	}
+
+	// GET responded to here if they correspond to predecessors[0]
+	if getHeadKeys().includesKey(key) && kvstore.IsGetRequest(kvRequest) {
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		return nil, payload, true, err
+	}
+	return nil, nil, false, nil
 }

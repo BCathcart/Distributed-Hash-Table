@@ -2,8 +2,10 @@ package membership
 
 import (
 	"errors"
+	"net"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /*
@@ -36,27 +38,118 @@ func searchForSuccessor(targetKey uint32, exceptionKey *uint32) (*pb.Member, int
 	return member, 0
 }
 
-/**
-Legacy function, current function (getPredecessor2) handles bootstrapping nodes.
-*/
-func getPredecessor() (uint32, error) {
+/*
+* Search for the tail of the chain with the head at the given position
+* If the number of STATUS_NORMAL members is less than the default length
+* of the chain (3), searchForTail returns the sucessor (if membership count is 2)
+* or the head itself (if membership count is 1)
+ */
+func searchForTail(head int) (*pb.Member, int) {
+	chain := make([]int, 3)
+	chain[0] = head
+	count := 1
+	for i := head + 1; i != head; i++ {
+		if i == len(memberStore_.members) {
+			i = 0
+			if i == head {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			chain[count] = i
+			count++
+			if count == 3 {
+				return member, i
+			}
+		}
+	}
+	// there were not enough STATUS_NORMAL members in the ring
+	idx := chain[count-1]
 
-	if len(memberStore_.members) == 1 {
-		return 0, errors.New("can't find predecessor")
+	return memberStore_.members[idx], idx
+}
+
+func searchForPredecessors(pos int, numPredecessors int) []*pb.Member {
+	members := make([]*pb.Member, numPredecessors)
+	count := 0
+	for i := pos - 1; i != pos; i-- {
+		if i < 0 {
+			i = len(memberStore_.members) - 1
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			members[count] = member
+			count++
+			if count == numPredecessors {
+				return members
+			}
+		}
 	}
 
-	numMembers := len(memberStore_.members)
-	predecessorPosition := (memberStore_.position + numMembers - 1) % numMembers // Handles wrap around
-	predecessor := memberStore_.members[predecessorPosition]
-	key := predecessor.Key
+	return members
+}
 
-	return key, nil
+/**
+* Based on a target node position in the memberstore, returns the first STATUS_NORMAL node before
+ */
+func getPredecessorFromPos(pos int) (*pb.Member, int) {
+	for i := pos - 1; i != pos; i-- {
+		if i < 0 {
+			i = len(memberStore_.members) - 1
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			return member, i
+		}
+	}
+	// no predecessor exists
+	return nil, 0
+}
+
+/**
+* Based on a target node position in the memberstore, returns the first STATUS_NORMAL node after
+ */
+func getSuccessorFromPos(pos int) (*pb.Member, int) {
+	for i := pos + 1; i != pos; i++ {
+		if i == len(memberStore_.members) {
+			i = 0
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			return member, i
+		}
+	}
+	// no successor exists
+	return nil, 0
+}
+
+func getPredAddresses(members []*pb.Member) ([]*net.Addr, []uint32) {
+	addresses := make([]*net.Addr, len(members))
+	keys := make([]uint32, len(members))
+
+	for i := 0; i < len(members); i++ {
+		if members[i] != nil {
+			addresses[i], _ = getMemberAddr(members[i])
+			keys[i] = members[i].GetKey()
+		}
+	}
+	return addresses, keys
 }
 
 /**
 Based on a target key, returns the first node before
 */
-func getPredecessor2(targetKey uint32) (uint32, error) {
+func getPredecessor(targetKey uint32) (uint32, error) {
 	for i := len(memberStore_.members) - 1; i >= 0; i-- {
 		// skip over "Bootstrapping" nodes
 		if targetKey < memberStore_.members[i].Key && memberStore_.members[i].Status == STATUS_NORMAL {
@@ -75,45 +168,14 @@ func getPredecessor2(targetKey uint32) (uint32, error) {
 	return 0, errors.New("can't find predecessor")
 }
 
-/**
-Legacy function: returns true/false boolean based on whether the current node
-is a successor of a key.
-
-Instead, we call searchForSuccessor function and check the index.
-*/
-func isSuccessor(targetKey uint32) (bool, error) {
-	if memberStore_.getLength() <= 1 {
-		return true, nil
-	}
+/* GetMembershipCount returns the number of members in  the membership list with STATUS_NORMAL */
+func GetMembershipCount() int {
 	memberStore_.lock.RLock()
 	defer memberStore_.lock.RUnlock()
-	predVal, err := getPredecessor2(targetKey)
 
-	if err != nil {
-		return false, err
-	}
-
-	/*
-		Need to check for wraparound cases.
-		e.g. if maxRingValue = 100, curNode = 10, predecessor = 90
-		(which will be the biggest node), keys will get transferred if node is < curNode (0 to 9)
-		or bigger than biggest node (91 to 99)
-	*/
-	if memberStore_.isFirstNode() {
-		return targetKey < memberStore_.mykey || targetKey > predVal, nil
-	}
-	// Non edge case: just needs to be between current node and its predecessor.
-	return targetKey < memberStore_.mykey && targetKey > predVal, nil
+	return memberStore_.getCountStatusNormal()
 }
 
-func GetMembershipCount() int {
-	return memberStore_.getLength()
-}
-
-/**
-* @param hashed key
-* @return true if the key is assigned to the node
- */
-func IsMine(key uint32) bool {
-	return key <= memberStore_.mykey && (memberStore_.position == 0 || (key <= memberStore_.get(memberStore_.position-1).GetKey()))
+func getMemberAddr(member *pb.Member) (*net.Addr, error) {
+	return util.GetAddr(string(member.GetIp()), int(member.GetPort()))
 }

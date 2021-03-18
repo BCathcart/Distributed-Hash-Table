@@ -1,6 +1,8 @@
 package kvstore
 
 import (
+	"encoding/binary"
+	"errors"
 	"log"
 	"os"
 	"runtime"
@@ -80,6 +82,7 @@ func handleOverload() *pb.KVResponse {
 * @param serializedReq The serialized KVRequest.
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
+* @return the errorcode
  */
 func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
 	var errCode uint32
@@ -89,17 +92,15 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	we only restrict PUT and GET requests. REMOVE and WIPEOUT may increase
 	the memory momentarily, but the benifit of the freed up space outweighs
 	the momentary costs. */
-	cmd := kvRequest.Command
-	key := string(kvRequest.Key)
-	value := kvRequest.Value
+	cmd := kvRequest.GetCommand()
+	key := string(kvRequest.GetKey())
+	value := kvRequest.GetValue()
 	var version int32
 	if kvRequest.Version != nil {
 		version = *kvRequest.Version
 	} else {
 		version = 0
 	}
-
-	log.Println("KEY: ", kvRequest.Key)
 
 	// Determine action based on the command
 	switch cmd {
@@ -113,15 +114,12 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = OVERLOAD
 		} else {
 			errCode = kvStore_.Put(key, value, version)
+			//DEBUGGING
+			kvRes.Value = value
 		}
 
-		var tmp_value []byte
-		if len(value) > 20 {
-			tmp_value = value[:20]
-		} else {
-			tmp_value = value
-		}
-		log.Println("PUT VALUE: ", tmp_value)
+		//DEBUGGING
+		log.Println("PUT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -139,13 +137,8 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = code
 		}
 
-		var tmp_value []byte
-		if len(kvRes.Value) > 20 {
-			tmp_value = kvRes.Value[:20]
-		} else {
-			tmp_value = kvRes.Value
-		}
-		log.Println("GOT VALUE: ", tmp_value)
+		//DEBUGGING
+		log.Println("GOT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
@@ -194,10 +187,79 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	return resPayload, nil, errCode
 }
 
-/**
-Used for debugging purposes to ensure keys are being distributed evenly:
-prints out number of elements in cache
-*/
+func InternalDataUpdate(kvRequest *pb.KVRequest) error {
+	cmd := kvRequest.Command
+	key := string(kvRequest.Key)
+
+	var errCode uint32
+	switch cmd {
+	case PUT:
+		var version int32
+		if kvRequest.Version != nil {
+			version = *kvRequest.Version
+		} else {
+			version = 0
+		}
+
+		if memUsage() > MAX_MEM_USAGE {
+			handleOverload()
+			return errors.New("Overload")
+		} else {
+			errCode = kvStore_.Put(key, kvRequest.Value, version)
+		}
+
+	case REMOVE:
+		kvStore_.lock.Lock()
+		errCode = kvStore_.Remove(key)
+		kvStore_.lock.Unlock()
+
+	default:
+		return errors.New("Command is not an update")
+	}
+
+	if errCode != OK {
+		return errors.New("Data update failed with error code: " + strconv.Itoa(int(errCode)))
+	}
+
+	return nil
+}
+
+/*
+* PrintKVStoreSize prints out the size of the kvstore
+ */
 func PrintKVStoreSize() {
 	log.Println("SIZE: ", kvStore_.GetSize())
+}
+
+/**
+* IsGetRequest returns true if the KVRequest is a GET request
+ */
+func IsGetRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == GET
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is an update, i.e. PUT or REMOVE request
+ */
+func IsUpdateRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is a key-value request (i.e. PUT, GET, REMOVE, or WIPEOUT)
+ */
+func IsKVRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT || kvrequest.GetCommand() == GET ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+//For DEBUGGING
+func BytetoInt(val []byte) uint32 {
+	var tmp_value []byte
+	if len(val) >= 4 {
+		tmp_value = val[:4]
+		return binary.LittleEndian.Uint32(tmp_value)
+	}
+	return 0
 }

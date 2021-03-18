@@ -115,6 +115,8 @@ func (ms *MemberStore) getCurrMember() *pb.Member {
 	return member
 }
 
+// get a random STATUS_NORMAL member from the memberstore
+// return nil if there is no other valid member
 func (ms *MemberStore) getRandMember() *pb.Member {
 	//pick a node at random to gossip to
 	var member *pb.Member
@@ -123,10 +125,9 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	copy(membersCopy, ms.members)
 
 	// Remove all members w/o STATUS_NORMAL
-	filterForStatusNormal(membersCopy)
+	membersCopy = filterForStatusNormal(membersCopy)
 
 	if len(membersCopy) == 1 {
-		log.Println("Warn: only one STATUS_NORMAL node")
 		ms.lock.RUnlock()
 		return nil
 	}
@@ -142,10 +143,13 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	return member
 }
 
-func (ms *MemberStore) getLength() int {
-	ms.lock.RLock()
-	count := len(ms.members)
-	ms.lock.RUnlock()
+func (ms *MemberStore) getCountStatusNormal() int {
+	count := 0
+	for i := 0; i < len(ms.members); i++ {
+		if memberStore_.members[i].Status == STATUS_NORMAL {
+			count++
+		}
+	}
 	return count
 }
 
@@ -185,7 +189,7 @@ func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
 	ms.lock.Unlock()
 }
 
-func filterForStatusNormal(members []*pb.Member) {
+func filterForStatusNormal(members []*pb.Member) []*pb.Member {
 	var i int
 	for i < len(members) {
 		if members[i].Status == STATUS_NORMAL {
@@ -195,4 +199,5 @@ func filterForStatusNormal(members []*pb.Member) {
 			members = append(members[:i], members[i+1:]...)
 		}
 	}
+	return members
 }
