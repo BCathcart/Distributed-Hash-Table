@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"encoding/binary"
 	"errors"
 	"log"
 	"os"
@@ -101,8 +102,6 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		version = 0
 	}
 
-	log.Println("KEY: ", kvRequest.GetKey())
-
 	// Determine action based on the command
 	switch cmd {
 	case PUT:
@@ -115,15 +114,12 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = OVERLOAD
 		} else {
 			errCode = kvStore_.Put(key, value, version)
+			//DEBUGGING
+			kvRes.Value = value
 		}
 
-		var tmp_value []byte
-		if len(value) > 20 {
-			tmp_value = value[:20]
-		} else {
-			tmp_value = value
-		}
-		log.Println("PUT VALUE: ", tmp_value)
+		//DEBUGGING
+		log.Println("PUT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -141,13 +137,8 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = code
 		}
 
-		var tmp_value []byte
-		if len(kvRes.Value) > 20 {
-			tmp_value = kvRes.Value[:20]
-		} else {
-			tmp_value = kvRes.Value
-		}
-		log.Println("GOT VALUE: ", tmp_value)
+		//DEBUGGING
+		log.Println("GOT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
@@ -261,4 +252,14 @@ func IsUpdateRequest(kvrequest *pb.KVRequest) bool {
 func IsKVRequest(kvrequest *pb.KVRequest) bool {
 	return kvrequest.GetCommand() == PUT || kvrequest.GetCommand() == GET ||
 		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+//For DEBUGGING
+func BytetoInt(val []byte) uint32 {
+	var tmp_value []byte
+	if len(val) >= 4 {
+		tmp_value = val[:4]
+		return binary.LittleEndian.Uint32(tmp_value)
+	}
+	return 0
 }

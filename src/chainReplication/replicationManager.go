@@ -58,6 +58,8 @@ func getHeadKeys() keyRange {
 	}
 	headkeys := mykeys
 	if head != nil {
+		//DEBUGGING
+		log.Println("the head is", (*head.addr).String(), "\n")
 		headkeys = head.keys
 	}
 	return headkeys
@@ -238,7 +240,7 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 		return nil, payload, err
 	}
 	// otherwise forward the update to the successor
-	log.Println("Forwarding Chain update to successor")
+	log.Println("Forwarding Chain update to", (*successor.addr).String())
 
 	return successor.addr, nil, nil
 }

@@ -62,7 +62,7 @@ func sweepReqCache() {
 
 	// Send error responses
 	for _, errResponse := range errResponseAddrs {
-		sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, errResponse.isFirstHop == false)
+		sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, 0, errResponse.isFirstHop == false)
 	}
 
 	// Send ping requests
@@ -139,7 +139,7 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 * @param isFirstHop True if the request originated from a client and is being forwarded internally for the first time, false otherwise
  */
 func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, returnAddr *net.Addr, isFirstHop bool) {
-	if isFirstHop && msgType != FORWARDED_CLIENT_REQ {
+	if isFirstHop && (msgType != FORWARDED_CLIENT_REQ && msgType != FORWARDED_CHAIN_UPDATE) {
 		panic("isFirstHop can only be true for client requests")
 	}
 

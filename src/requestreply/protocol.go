@@ -147,7 +147,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal bool) {
+func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
 	checksum := computeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
@@ -158,6 +158,7 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal boo
 
 	// Specify it is a response if the destination is another server
 	if isInternal {
+		resMsg.InternalID = internal_id
 		resMsg.IsResponse = true
 	}
 
@@ -187,6 +188,11 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 			Payload:   resMsg.Payload,
 			CheckSum:  resMsg.CheckSum,
 		}
+		/************DEBUGGING****************
+		kvResponse := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.GetPayload(), kvResponse)
+		log.Println("Sending Response to client VALUE:", kvstore.BytetoInt(kvResponse.GetValue()))
+		**************************************/
 	}
 
 	serMsg, err := proto.Marshal(resMsg)
@@ -207,13 +213,17 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 * @param returnAddr The address to forward the response to, nil if the response shouldn't be forwarded.
 * @param reqMsg The message to send.
  */
-func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
+func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg, isForwardedChainUpdate bool) {
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
 	if reqMsg.InternalID == EXTERNAL_REQUEST {
 		reqMsg.InternalID = FORWARDED_CLIENT_REQ
 		isFirstHop = true
+	}
+
+	if isForwardedChainUpdate {
+		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE
 	}
 
 	serMsg, err := proto.Marshal(reqMsg)
@@ -266,11 +276,9 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 			return
 		}
 		if fwdAddr != nil {
-			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg)
-		}
-
-		if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, true)
+			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
+		} else if respond {
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
 		}
 		return
 	}
@@ -283,14 +291,10 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID != EXTERNAL_REQUEST)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQUEST)
 	} else {
 		// Forward request if key doesn't correspond to this node:
-		fwdMsg := reqMsg
-		if isForwardedChainUpdate {
-			fwdMsg.InternalID = FORWARDED_CHAIN_UPDATE
-		}
-		forwardUDPRequest(fwdAddr, &returnAddr, fwdMsg)
+		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
 	}
 
 }
@@ -310,10 +314,18 @@ func processResponse(resMsg *pb.InternalMsg) {
 	req := reqCache_.data.Get(string(resMsg.MessageID))
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
+		/************DEBUGGING****************
+		res := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.Payload, res)
+		**************************************/
 
 		// If cached request has return address, forward the request
 		if reqCacheEntry.returnAddr != nil {
+			// log.Println("Forwarding response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()), "to", (*reqCacheEntry.returnAddr).String())
+
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
+		} else {
+			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
 		}
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
@@ -325,7 +337,12 @@ func processResponse(resMsg *pb.InternalMsg) {
 		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
-		log.Println("WARN: Received response for unknown request")
+		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)
+		/************DEBUGGING****************
+		res := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.Payload, res)
+		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID, "for value", kvstore.BytetoInt(res.GetValue()))
+		***************************************/
 	}
 	reqCache_.lock.Unlock()
 }
