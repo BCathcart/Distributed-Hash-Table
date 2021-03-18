@@ -2,8 +2,10 @@ package membership
 
 import (
 	"errors"
+	"net"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /*
@@ -68,6 +70,82 @@ func searchForTail(head int) (*pb.Member, int) {
 	return memberStore_.members[idx], idx
 }
 
+func searchForPredecessors(pos int, numPredecessors int) []*pb.Member {
+	members := make([]*pb.Member, numPredecessors)
+	count := 0
+	for i := pos - 1; i != pos; i-- {
+		if i < 0 {
+			i = len(memberStore_.members) - 1
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			members[count] = member
+			count++
+			if count == numPredecessors {
+				return members
+			}
+		}
+	}
+
+	return members
+}
+
+/**
+* Based on a target node position in the memberstore, returns the first STATUS_NORMAL node before
+ */
+func getPredecessorFromPos(pos int) (*pb.Member, int) {
+	for i := pos - 1; i != pos; i-- {
+		if i < 0 {
+			i = len(memberStore_.members) - 1
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			return member, i
+		}
+	}
+	// no predecessor exists
+	return nil, 0
+}
+
+/**
+* Based on a target node position in the memberstore, returns the first STATUS_NORMAL node after
+ */
+func getSuccessorFromPos(pos int) (*pb.Member, int) {
+	for i := pos + 1; i != pos; i++ {
+		if i == len(memberStore_.members) {
+			i = 0
+			if i == pos {
+				break
+			}
+		}
+		member := memberStore_.members[i]
+		if member.Status == STATUS_NORMAL {
+			return member, i
+		}
+	}
+	// no successor exists
+	return nil, 0
+}
+
+func getPredAddresses(members []*pb.Member) ([]*net.Addr, []uint32) {
+	addresses := make([]*net.Addr, len(members))
+	keys := make([]uint32, len(members))
+
+	for i := 0; i < len(members); i++ {
+		if members[i] != nil {
+			addresses[i], _ = getMemberAddr(members[i])
+			keys[i] = members[i].GetKey()
+		}
+	}
+	return addresses, keys
+}
+
 /**
 Based on a target key, returns the first node before
 */
@@ -98,10 +176,6 @@ func GetMembershipCount() int {
 	return memberStore_.getCountStatusNormal()
 }
 
-/**
-* @param hashed key
-* @return true if the key is assigned to the node
- */
-func IsMine(key uint32) bool {
-	return key <= memberStore_.mykey && (memberStore_.position == 0 || (key <= memberStore_.get(memberStore_.position-1).GetKey()))
+func getMemberAddr(member *pb.Member) (*net.Addr, error) {
+	return util.GetAddr(string(member.GetIp()), int(member.GetPort()))
 }

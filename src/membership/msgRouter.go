@@ -79,6 +79,7 @@ func ExternalMsgHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 	if err != nil {
 		return nil, false, nil, err
 	}
+	// try to handle the request here at this node
 	fwdAddr, payload, isMine, err := chainReplication.HandleClientRequest(kvRequest)
 	if isMine {
 		if kvstore.IsUpdateRequest(kvRequest) {
@@ -94,6 +95,7 @@ func ExternalMsgHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 		return fwdAddr, true, payload, err
 	}
 	// the request does not belong to this node, route it to the right node
+
 	key := util.Hash(kvRequest.GetKey())
 
 	memberStore_.lock.RLock()

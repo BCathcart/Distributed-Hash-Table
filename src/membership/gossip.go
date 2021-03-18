@@ -5,6 +5,7 @@ import (
 	"net"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/golang/protobuf/proto"
 )
@@ -105,7 +106,20 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	// get the last 3 predecessors
+	preds := searchForPredecessors(memberStore_.position, 3)
+	addresses, keys := getPredAddresses(preds)
+	successor, _ := getSuccessorFromPos(memberStore_.position)
 	memberStore_.lock.Unlock()
+
+	if successor != nil {
+		successorAddr, _ := getMemberAddr(successor)
+		successorKey := successor.GetKey()
+		chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
+	} else {
+		chainReplication.UpdateSuccessor(nil, 0, 0)
+	}
+	chainReplication.UpdatePredecessors(addresses, keys, memberStore_.mykey)
 
 	log.Println(memberStore_.members)
 
