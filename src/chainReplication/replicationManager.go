@@ -90,9 +90,6 @@ func replicationInit(thisNodesAddr *net.Addr) {
 			resendPendingTransfers()
 		}
 	}()
-
-	// Init successor and predecessors
-	prepareForBootstrapTransfer(nil)
 }
 
 var mykeys keyRange
@@ -329,11 +326,6 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32, isNewMemb
 		// only need to transfer the first predecessor's keys
 		sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
 	}
-}
-
-func prepareForBootstrapTransfer(succAddr *net.Addr) {
-	// expect transfer from successor
-	expectedTransfers = append(expectedTransfers, succAddr)
 }
 
 // TRANSFER_REQ internal msg type

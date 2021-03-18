@@ -76,6 +76,12 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 		return err
 	}
 
+	requestreply.SendDataTransferAck(serPayload, addr)
+
 	err = kvstore.InternalDataUpdate(kvRequest)
 	return err
+}
+
+func HandleDataAck() {
+	// remove from waiting ack store
 }
