@@ -10,6 +10,7 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"github.com/golang/protobuf/proto"
 )
@@ -23,21 +24,31 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 	respond := true
 
 	switch msg.InternalID {
-	case MEMBERSHIP_REQUEST:
+	case requestreply.MEMBERSHIP_REQUEST:
 		membershipReqHandler(addr, msg)
 		respond = false
 
-	case HEARTBEAT:
+	case requestreply.HEARTBEAT:
 		heartbeatHandler(addr, msg)
 
-	case TRANSFER_FINISHED:
-		transferFinishedHandler(addr, msg)
+	case requestreply.TRANSFER_FINISHED:
+		memberStore_.lock.RLock()
+		status := memberStore_.members[memberStore_.position].Status
+		memberStore_.lock.RUnlock()
 
-	case DATA_TRANSFER:
-		chainReplication.HandleDataMsg(addr, msg)
-		// resPayload, err = transferRequestHandler(addr, msg)
+		if status == STATUS_BOOTSTRAPPING {
+			bootstrapTransferFinishedHandler(memberStore_)
+		} else {
+			chainReplication.HandleTransferFinishedReq(&addr)
+		}
 
-	case PING:
+	case requestreply.DATA_TRANSFER:
+		err = transferService.HandleDataMsg(addr, msg)
+		if err != nil {
+			log.Println("ERROR: Could not handle data transfer message - ", err)
+		}
+
+	case requestreply.PING:
 		// Send nil payload back
 		log.Println("Got PINGed")
 
@@ -63,13 +74,7 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 
 	key := util.Hash(kvRequest.GetKey())
 
-	// If this node is bootstrapping and this is FORWARDED_CLIENT_REQ, then it automatically belongs to this node.
-	// TODO(Brennan): use DATA_TRANSFER type instead?
-	if memberStore_.getCurrMember().Status == STATUS_BOOTSTRAPPING && msg.InternalID == requestreply.FORWARDED_CLIENT_REQ {
-		log.Println(key, memberStore_.mykey, "keeping key sent by successor during bootstrap")
-		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-		return nil, addr, payload, err
-	}
+	// TODO: handle case when the key is null
 
 	memberStore_.lock.RLock()
 	transferNdAddr := memberStore_.transferNodeAddr
@@ -88,17 +93,17 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr,
 
 	var forwardAddr *net.Addr
 
-	// First try handling the request here. If the key isn't found, forward the request to bootstrapping predecessor
 	if transferRcvNdKey != nil && *transferRcvNdKey == member.Key {
-		// TODO(Brennan): if the request is an update, also forward the update to the predecessor transferring to
-
 		log.Println("transferRcvNdKey: This index: ", thisMemberPos, ", Successor index: ", pos)
-		payload, err, errCode := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-		if errCode != kvstore.NOT_FOUND {
-			return nil, addr, payload, err
-		} else {
-			return *transferNdAddr, addr, payload, err
+		payload, err, isUpdate := kvstore.RequestHandler(kvRequest, GetMembershipCount())
+
+		// Forward any updates to the bootstrapping predecessor to keep sequential consistency
+		if isUpdate {
+			requestreply.SendDataTransferMessage(msg.GetPayload(), transferNdAddr)
 		}
+
+		return nil, addr, payload, err
+
 	} else if pos == thisMemberPos {
 		log.Println("This index: ", thisMemberPos, ", Successor index: ", pos)
 		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount

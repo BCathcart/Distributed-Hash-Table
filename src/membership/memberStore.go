@@ -123,7 +123,7 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	copy(membersCopy, ms.members)
 
 	// Remove all members w/o STATUS_NORMAL
-	filterForStatusNormal(membersCopy)
+	membersCopy = filterForStatusNormal(membersCopy)
 
 	if len(membersCopy) == 1 {
 		log.Println("Warn: only one STATUS_NORMAL node")
@@ -185,7 +185,7 @@ func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
 	ms.lock.Unlock()
 }
 
-func filterForStatusNormal(members []*pb.Member) {
+func filterForStatusNormal(members []*pb.Member) []*pb.Member {
 	var i int
 	for i < len(members) {
 		if members[i].Status == STATUS_NORMAL {
@@ -195,4 +195,5 @@ func filterForStatusNormal(members []*pb.Member) {
 			members = append(members[:i], members[i+1:]...)
 		}
 	}
+	return members
 }

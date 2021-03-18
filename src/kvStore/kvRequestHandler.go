@@ -1,6 +1,7 @@
 package kvstore
 
 import (
+	"errors"
 	"log"
 	"os"
 	"runtime"
@@ -80,8 +81,9 @@ func handleOverload() *pb.KVResponse {
 * @param serializedReq The serialized KVRequest.
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
+* @return True if the request was an update (PUT or REMOVE), false otherwise
  */
-func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, bool) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -188,10 +190,49 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	resPayload, err := proto.Marshal(kvRes)
 	if err != nil {
 		log.Println("Marshaling payload error. ", err.Error())
-		return nil, err, errCode
+		return nil, err, false
 	}
 
-	return resPayload, nil, errCode
+	isUpdate := cmd == PUT || cmd == REMOVE
+
+	return resPayload, nil, isUpdate
+}
+
+func InternalDataUpdate(kvRequest *pb.KVRequest) error {
+	cmd := kvRequest.Command
+	key := string(kvRequest.Key)
+
+	var errCode uint32
+	switch cmd {
+	case PUT:
+		var version int32
+		if kvRequest.Version != nil {
+			version = *kvRequest.Version
+		} else {
+			version = 0
+		}
+
+		if memUsage() > MAX_MEM_USAGE {
+			handleOverload()
+			return errors.New("Overload")
+		} else {
+			errCode = kvStore_.Put(key, kvRequest.Value, version)
+		}
+
+	case REMOVE:
+		kvStore_.lock.Lock()
+		errCode = kvStore_.Remove(key)
+		kvStore_.lock.Unlock()
+
+	default:
+		return errors.New("Command is not an update")
+	}
+
+	if errCode != OK {
+		return errors.New("Data update failed with error code: " + strconv.Itoa(int(errCode)))
+	}
+
+	return nil
 }
 
 /**
