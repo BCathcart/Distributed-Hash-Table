@@ -17,6 +17,10 @@ func CreateAddressString(ipStr string, port int) string {
 	return ipStr + ":" + strconv.Itoa(port)
 }
 
+func CreateAddressStringFromAddr(addr *net.Addr) string {
+	return CreateAddressString((*addr).(*net.UDPAddr).IP.String(), (*addr).(*net.UDPAddr).Port)
+}
+
 func GetIPPort(addrString string) (string, string) {
 	return strings.Split(addrString, ":")[0], strings.Split(addrString, ":")[1]
 }
@@ -29,6 +33,16 @@ func GetAddr(ip string, port int) (*net.Addr, error) {
 	}
 	var netAddr net.Addr = udpAddr
 	return &netAddr, nil
+}
+
+func SerializeAddr(addr *net.Addr) []byte {
+	return []byte(CreateAddressString((*addr).(*net.UDPAddr).IP.String(), (*addr).(*net.UDPAddr).Port))
+}
+
+func DeserializeAddr(serAddr []byte) (*net.Addr, err) {
+	udpAddr, err := net.ResolveUDPAddr("udp", string(serAddr))
+	var addr net.Addr = udpAddr
+	return &addr, err
 }
 
 func GetNodeKey(ipStr string, portStr string) uint32 {
@@ -49,6 +63,12 @@ func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 	} else { // Edge case where there's a wrap-around
 		return targetKey < lowerKey || targetKey > upperKey
 	}
+}
+
+// TODO(Brennan): check that this works
+func RemoveAddrFromArr(s []*net.Addr, i int) []*net.Addr {
+	s[len(s)-1], s[i] = s[i], s[len(s)-1]
+	return s[:len(s)-1]
 }
 
 //func PrintInternalMsg(iMsg *pb.InternalMsg) {

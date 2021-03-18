@@ -24,7 +24,7 @@ func SendMembershipRequest(payload []byte, ip string, port int) error {
 		log.Println("WARN Could not resolve member UDP addr")
 		return err
 	}
-	sendUDPRequest(addr, payload, MEMBERSHIP_REQUEST)
+	sendUDPRequest(addr, payload, MEMBERSHIP_REQ)
 	return nil
 }
 
@@ -35,7 +35,7 @@ func SendPingRequest(ip string, port int) error {
 		log.Println("WARN Could not resolve member UDP addr")
 		return err
 	}
-	sendUDPRequest(addr, nil, PING)
+	sendUDPRequest(addr, nil, PING_MSG)
 	return nil
 }
 
@@ -47,19 +47,22 @@ func SendHeartbeatMessage(payload []byte, ip string, port int) error {
 		log.Println("WARN Could not resolve member UDP addr")
 		return err
 	}
-	sendUDPRequest(addr, payload, HEARTBEAT)
+	sendUDPRequest(addr, payload, HEARTBEAT_MSG)
 	return nil
 }
 
 //SendTransferFinished - successor sends to predecessor to indicate all KV pairs
 // have been sent - can complete boostrap and assume responsibility for the keys
-func SendTransferFinished(payload []byte, addr *net.Addr) error {
-	sendUDPRequest(addr, payload, TRANSFER_FINISHED)
-	return nil
+func SendTransferFinished(payload []byte, addr *net.Addr) {
+	sendUDPRequest(addr, payload, TRANSFER_FINISHED_MSG)
 }
 
 //SendDataTransferMessage - sends a key-value pair (i.e. an internal PUT request)
-func SendDataTransferMessage(payload []byte, addr *net.Addr) error {
-	sendUDPRequest(addr, payload, DATA_TRANSFER)
-	return nil
+func SendDataTransferMessage(payload []byte, addr *net.Addr) {
+	sendUDPRequest(addr, payload, DATA_TRANSFER_MSG)
+}
+
+// TRANSFER_REQ - establishes mutual agreement that a transfer is needed for replication purposes
+func SendTransferReq(payload []byte, addr *net.Addr) {
+	sendUDPRequest(addr, payload, TRANSFER_REQ)
 }

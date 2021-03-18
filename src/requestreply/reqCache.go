@@ -67,7 +67,7 @@ func sweepReqCache() {
 
 	// Send ping requests
 	for _, addr := range membersToPing {
-		sendUDPRequest(addr, nil, PING)
+		sendUDPRequest(addr, nil, PING_MSG)
 	}
 
 }
@@ -106,8 +106,8 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 
 			// Handle expired internal requests
 		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
-			if reqCacheEntry.msgType == PING {
-				log.Println("PING TIMED OUT")
+			if reqCacheEntry.msgType == PING_MSG {
+				log.Println("PING_MSG TIMED OUT")
 				go getNodeUnavailableHandler()(reqCacheEntry.addr)
 
 			} else {
