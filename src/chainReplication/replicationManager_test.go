@@ -21,6 +21,7 @@ type sweeperCall struct {
 	highKey uint32
 }
 
+// Spies to keep track of function calls during testing
 var transferCalls []transferCall
 var sweeperCalls []sweeperCall
 
@@ -47,6 +48,13 @@ func mostRecentSweeper() sweeperCall {
 	return sweeperCalls[len(sweeperCalls)-1]
 }
 
+func shallowCopy(orig *predecessorNode) *predecessorNode {
+	return &predecessorNode{
+		keys: orig.keys,
+		addr: orig.addr,
+	}
+}
+
 func newPredecessor(addr *net.Addr, low uint32, high uint32) *predecessorNode {
 	return &predecessorNode{
 		addr: addr,
@@ -59,14 +67,16 @@ func setupPredecessors() [3]*predecessorNode {
 	mockAddr1, _ := util.GetAddr(MOCK_IP, 2)
 	mockAddr2, _ := util.GetAddr(MOCK_IP, 3)
 	mockAddr3, _ := util.GetAddr(MOCK_IP, 4)
+	mockSuccAddr, _ := util.GetAddr(MOCK_IP, 5)
 	mykeys = util.KeyRange{Low: 90, High: 99}
+	successor = &successorNode{keys: util.KeyRange{Low: 100, High: 109}, addr: mockSuccAddr}
 	predecessors[0] = newPredecessor(mockAddr1, 80, 89)
 	predecessors[1] = newPredecessor(mockAddr2, 70, 79)
 	predecessors[2] = newPredecessor(mockAddr3, 60, 69)
 	var newPredecessors [3]*predecessorNode
-	newPredecessors[0] = newPredecessor(mockAddr1, 80, 89)
-	newPredecessors[1] = newPredecessor(mockAddr2, 70, 79)
-	newPredecessors[2] = newPredecessor(mockAddr3, 60, 69)
+	newPredecessors[0] = shallowCopy(predecessors[0])
+	newPredecessors[1] = shallowCopy(predecessors[1])
+	newPredecessors[2] = shallowCopy(predecessors[2])
 	return newPredecessors
 }
 
@@ -110,18 +120,164 @@ func TestPredecessorsNoChange(t *testing.T) {
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 }
 
-func TestPredecessorsThirdNodeJoined(t *testing.T) {
+func TestPredecessorsThirdJoined(t *testing.T) {
 	newPredecessors := setupPredecessors()
-	newPredecessors[1].keys.Low = predecessors[1].keys.Low + 2
-	newPredecessors[2].keys.High = newPredecessors[1].keys.Low
+	newPred3KEy := predecessors[1].keys.Low + 2
+	newPredecessors[1].keys.Low = newPred3KEy
+	newPredecessors[2].keys.High = newPred3KEy
 	newPredecessors[2].keys.Low = predecessors[2].keys.High
+	beforeLen := len(sweeperCalls)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 	expected := sweeperCall{
 		highKey: newPredecessors[2].keys.High,
 		lowKey:  newPredecessors[2].keys.Low,
 	}
+	if len(sweeperCalls) != beforeLen+1 {
+		t.Errorf("Error: did not sweep cache")
+	}
 	result := mostRecentSweeper()
 	if expected != result {
 		t.Errorf("Adding new node failed, expected to call sweeper with %v but got %v", expected, result)
 	}
+}
+
+func TestPredecessorsThirdFailed(t *testing.T) {
+	newPredecessors := setupPredecessors()
+	newPred3KEy := predecessors[1].keys.Low - 2
+	newPredecessors[1].keys.Low = newPred3KEy
+	newPredecessors[2].keys.High = newPred3KEy
+	newPredecessors[2].keys.Low = predecessors[2].keys.High
+	preFunctionLen := len(pendingRcvingTransfers)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	expected := preFunctionLen + 1
+	result := len(pendingRcvingTransfers)
+	if expected != result {
+		t.Errorf("Expected pendingRcvTransfers to be %v long but got %v", expected, result)
+	}
+}
+
+// New predecessor joined at index 1 (the second node)
+func TestPredecessorsSecondJoined(t *testing.T) {
+	newPredecessors := setupPredecessors()
+	newPred2KEy := predecessors[1].keys.High + 2
+
+	newPredecessors[1].keys.High = newPred2KEy
+	newPredecessors[1].keys.Low = predecessors[1].keys.High
+	newPredecessors[0].keys.Low = newPred2KEy
+	newPredecessors[2] = shallowCopy(predecessors[1])
+
+	beforeLen := len(sweeperCalls)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	expected := sweeperCall{
+		highKey: predecessors[1].keys.High,
+		lowKey:  predecessors[1].keys.Low,
+	}
+	if len(sweeperCalls) != beforeLen+1 {
+		t.Errorf("Error: did not sweep cache")
+	}
+	result := mostRecentSweeper()
+	if expected != result {
+		t.Errorf("Adding new node at 2nd pos failed, expected to call sweeper with %v but got %v", expected, result)
+	}
+
+	// Edge case: second node joining in the chain, should not be calling sweeper
+	predecessors[1] = nil
+	predecessors[2] = nil
+	newPredecessors[2] = nil
+	beforeLen = len(sweeperCalls)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	if len(sweeperCalls) != beforeLen {
+		t.Errorf("Error: Should not be not sweeping cache as there are not enough nodes in the chain")
+	}
+}
+
+func TestPredecessorsSecondFailed(t *testing.T) {
+	newPredecessors := setupPredecessors()
+
+	newPredecessors[0].keys.Low = predecessors[1].keys.Low
+	newPredecessors[1] = shallowCopy(predecessors[2])
+	newPredecessors[2].keys.High = predecessors[2].keys.Low
+	newPredecessors[2].keys.Low = predecessors[2].keys.Low - 2
+
+	beforeLen := len(pendingRcvingTransfers)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	if len(pendingRcvingTransfers) != beforeLen+1 {
+		t.Errorf("Error: did not append to receiving transfers")
+	}
+
+	expected := transferCall{
+		highKey: predecessors[1].keys.High,
+		lowKey:  predecessors[1].keys.Low,
+		addr:    successor.addr,
+	}
+
+	result := mostRecentTransfer()
+	if expected != result {
+		t.Errorf("Removing 2nd node failed, expected to call transfer with %v but got %v", expected, result)
+	}
+}
+
+// New predecessor joined at index 0 (the first node)
+func TestPredecessorsFirstJoined(t *testing.T) {
+	newPredecessors := setupPredecessors()
+	newPred1KEy := predecessors[0].keys.High + 2
+
+	newPredecessors[0].keys.High = newPred1KEy
+	newPredecessors[0].keys.Low = predecessors[0].keys.High
+
+	// Rest of predecessors will be shifted by one
+	newPredecessors[1] = shallowCopy(predecessors[0])
+	newPredecessors[2] = shallowCopy(predecessors[1])
+
+	beforeLen := len(sweeperCalls)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	expected := sweeperCall{
+		highKey: predecessors[1].keys.High,
+		lowKey:  predecessors[1].keys.Low,
+	}
+	if len(sweeperCalls) != beforeLen+1 {
+		t.Errorf("Error: did not sweep cache")
+	}
+	result := mostRecentSweeper()
+	if expected != result {
+		t.Errorf("Adding new node at 2nd pos failed, expected to call sweeper with %v but got %v", expected, result)
+	}
+	// Edge case: very first node joining in the chain, should not be calling sweeper
+	predecessors[0] = nil
+	predecessors[1] = nil
+	predecessors[2] = nil
+	newPredecessors[1] = nil
+	newPredecessors[2] = nil
+	beforeLen = len(sweeperCalls)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	if len(sweeperCalls) != beforeLen {
+		t.Errorf("Error: Should not be not sweeping cache as there are not enough nodes in the chain")
+	}
+}
+
+func TestPredecessorsFirstFailed(t *testing.T) {
+	newPredecessors := setupPredecessors()
+
+	newPredecessors[0] = shallowCopy(predecessors[1])
+	newPredecessors[1] = shallowCopy(predecessors[2])
+	newPredecessors[2].keys.High = predecessors[2].keys.Low
+	newPredecessors[2].keys.Low = predecessors[2].keys.Low - 2
+
+	beforeLen := len(pendingRcvingTransfers)
+	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	if len(pendingRcvingTransfers) != beforeLen+1 {
+		t.Errorf("Error: did not append to receiving transfers")
+	}
+
+	expected := transferCall{
+		highKey: predecessors[1].keys.High,
+		lowKey:  predecessors[1].keys.Low,
+		addr:    successor.addr,
+	}
+
+	result := mostRecentTransfer()
+	if expected != result {
+		t.Errorf("Removing 1st node failed, expected to call transfer with %v but got %v", expected, result)
+	}
+
 }

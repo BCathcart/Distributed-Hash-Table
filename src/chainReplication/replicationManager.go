@@ -52,7 +52,6 @@ func dummySweeper(lowKey uint32, highKey uint32) {
 // 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
 var predecessors [3]*predecessorNode
 var successor *successorNode
-var thisKey uint32
 
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
@@ -154,8 +153,10 @@ func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) boo
 	TODO: Currently this code does not handle multiple simultaneous changes,
 		such as a new node joining and another node in the chain failing. The assumption
 		was that this would be a rare enough event.
-	@param newPredAddr1, newPredAddr2, newPredAddr3 are the three nodes previous to the current node in the chain, or
+	@param newPredecessors are the three nodes previous to the current node in the chain, or
 	nil if there are not enough nodes in the chain
+	@param transferKeys and sweepCache are used to make this function testable - otherwise it would
+	be challenging to keep
 
 	Precondition: if newPredAddrX is nil, all nodes newPredAddr(>X) must also be nil. e.g. if newPredAddr1 is nil,
 	newPredAddr2 and newPredAddr3 must also be nil.
@@ -197,7 +198,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred2 == nil || newPred2 == nil {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
-			// TODO: sweepCache(oldPredKey3, oldPredKey2)
 			sweepCache(newPred2.keys.Low, newPred2.keys.High)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
@@ -226,10 +226,11 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			if oldPred2 != nil {
 				transferKeys(successor.addr, oldPred2.keys.Low, oldPred2.keys.High)
 			}
+			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
+			//  This should be very rare so may not need to be handled, as the churn is expected to be low.
 			log.Println("TWO NODES FAILED SIMULTANEOUSLY.")
-			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
