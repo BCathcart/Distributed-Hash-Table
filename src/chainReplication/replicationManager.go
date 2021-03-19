@@ -227,7 +227,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
-			expectedTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
 		} else {
 			UnhandledScenarioError(newPredecessors)
