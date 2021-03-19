@@ -226,7 +226,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 	}
 
 	if isForwardedChainUpdate {
-		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE
+		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE_REQ
 	}
 
 	serMsg, err := proto.Marshal(reqMsg)
@@ -294,7 +294,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQUEST)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQ)
 	} else {
 		// Forward request if key doesn't correspond to this node:
 		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
@@ -412,13 +412,13 @@ func MsgListener() error {
 		err = proto.Unmarshal(buffer[0:n], msg)
 		if err != nil {
 			// Disregard messages with invalid format
-			log.Println("WARN msg with invalid format. Sender = " + returnAddr.String())
+			log.Println("WARN msg with invalid format. Sender = " + senderAddr.String())
 		}
 
 		// Verify checksum
 		if !verifyChecksum(msg) {
 			// Disregard messages with invalid checksums
-			log.Println("WARN checksum mismatch. Sender = " + returnAddr.String())
+			log.Println("WARN checksum mismatch. Sender = " + senderAddr.String())
 			continue
 		}
 

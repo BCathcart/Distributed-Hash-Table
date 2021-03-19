@@ -2,6 +2,7 @@ package util
 
 import (
 	"hash/crc32"
+	"log"
 	"net"
 	"strconv"
 	"strings"
@@ -36,10 +37,16 @@ func GetAddr(ip string, port int) (*net.Addr, error) {
 }
 
 func SerializeAddr(addr *net.Addr) []byte {
-	return []byte(CreateAddressString((*addr).(*net.UDPAddr).IP.String(), (*addr).(*net.UDPAddr).Port))
+	ip := (*addr).(*net.UDPAddr).IP.String()
+	if ip == "::" {
+		ip = "127.0.0.1"
+	}
+
+	return []byte(CreateAddressString(ip, (*addr).(*net.UDPAddr).Port))
 }
 
-func DeserializeAddr(serAddr []byte) (*net.Addr, err) {
+func DeserializeAddr(serAddr []byte) (*net.Addr, error) {
+	log.Println(string(serAddr))
 	udpAddr, err := net.ResolveUDPAddr("udp", string(serAddr))
 	var addr net.Addr = udpAddr
 	return &addr, err
@@ -69,6 +76,22 @@ func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 func RemoveAddrFromArr(s []*net.Addr, i int) []*net.Addr {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]
+}
+
+// Source: Sathish's campuswire post #310
+/**
+* Returns local IP address
+ */
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
 }
 
 //func PrintInternalMsg(iMsg *pb.InternalMsg) {

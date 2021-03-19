@@ -5,19 +5,14 @@ import (
 	"log"
 	"net"
 
-	"log"
-	"net"
 	"time"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
-	"google.golang.org/protobuf/proto"
-
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"google.golang.org/protobuf/proto"
 )
 
 // TODO(Brennan): should add callback to reqreply layer so that
@@ -41,13 +36,10 @@ type successorNode struct {
 	keys keyRange
 }
 
-// TODO: need reference to this nodes KV store?
-
 type predecessorNode struct {
 	addr        *net.Addr
 	keys        keyRange
 	transferred bool
-	// TODO: add kvStore instance here?
 }
 
 type transferInfo struct {
@@ -72,15 +64,17 @@ func dummySweeper(lowKey uint32, highKey uint32) {
 var predecessors [3]*predecessorNode
 var successor *successorNode
 
-var thisAddr *net.Addr
-var thisKeyRange keyRange
+var myAddr *net.Addr
+var mykeys keyRange
 
 // TODO: consider adding a lock to cover these
 var pendingTransfers []*transferInfo
 var expectedTransfers []*net.Addr
 
-func replicationInit(thisNodesAddr *net.Addr) {
-	thisAddr = thisNodesAddr
+func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
+	mykeys.low = keylow
+	mykeys.high = keyhigh
+	myAddr = addr
 
 	// Periodically re-send transfer requests until the receiver is ready
 	var ticker = time.NewTicker(time.Millisecond * 1000)
@@ -91,8 +85,6 @@ func replicationInit(thisNodesAddr *net.Addr) {
 		}
 	}()
 }
-
-var mykeys keyRange
 
 func (k keyRange) includesKey(key uint32) bool {
 	if k.low < k.high {
@@ -114,13 +106,6 @@ func getHeadKeys() keyRange {
 		headkeys = head.keys
 	}
 	return headkeys
-}
-
-func Init(keylow uint32, keyhigh uint32) {
-	mykeys.low = keylow
-	mykeys.high = keyhigh
-	// Init successor and predecessors
-	prepareForBootstrapTransfer(nil)
 }
 
 func resendPendingTransfers() {
@@ -227,7 +212,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
 			sweepCache(newPred3.keys.low, newPred3.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
-			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			expectedTransfers = append(expectedTransfers, newPred1.addr)
 		}
 	} else if pred1Equal {
 		/*
@@ -242,7 +227,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
-			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			expectedTransfers = append(pendingRcvingTransfers, newPred1.addr)
 			transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
 		} else {
 			UnhandledScenarioError(newPredecessors)
@@ -259,7 +244,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 				sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
-			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			if oldPred2 != nil {
 				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
 			}
@@ -267,7 +252,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			if oldPred2 != nil {
 				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
 			}
-			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
+			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
 			//  This should be very rare so may not need to be handled, as the churn is expected to be low.
@@ -309,22 +294,40 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 
 }
 
-func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32, isNewMember bool) {
-	successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
+func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
+	if succAddr == nil {
+		log.Println("ERROR: Successor address cannot be null")
+		return
+	}
 
-	if isNewMember {
-		// If the new successor joined, need to transfer your keys and first predecessor's keys
+	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)
+	// ASSUMPTION: first node won't receive keys before the second node is launched
+	if successor == nil {
+		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
+		return
+	}
 
-		// Transfer this server's keys to the new successor
-		sendDataTransferReq(succAddr, thisAddr, thisKeyRange)
+	// Ignore if information is the same
+	if util.CreateAddressStringFromAddr(successor.addr) != util.CreateAddressStringFromAddr(succAddr) {
+		isNewMember := maxKey < successor.keys.high
+		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
+		if isNewMember {
+			// If the new successor joined, need to transfer your keys and first predecessor's keys
 
-		// Transfer predecessor's keys to the new successor
-		sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+			// Transfer this server's keys to the new successor
+			sendDataTransferReq(succAddr, myAddr, mykeys)
 
-	} else {
-		// If the new successor already existed (previous successor failed),
-		// only need to transfer the first predecessor's keys
-		sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+			// Transfer predecessor's keys to the new successor
+			if predecessors[0].addr != nil {
+				sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+			}
+		} else {
+			// If the new successor already existed (previous successor failed),
+			// only need to transfer the first predecessor's keys
+			if predecessors[0].addr != nil {
+				sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+			}
+		}
 	}
 }
 
@@ -343,6 +346,11 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	// This ensures the transfer only happens when both parties
 	// are ready
 
+	if msg.Payload == nil {
+		log.Println("ERROR: HandleTransferReq - Coordinator address can't be null")
+		return nil, false
+	}
+
 	// Check if the transfer is expected
 	for _, coorAddr := range expectedTransfers {
 		if util.CreateAddressStringFromAddr(coorAddr) == string(msg.Payload) {
@@ -350,13 +358,23 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 		}
 	}
 
-	log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.DeserializeAddr(msg.Payload))
+	addr, err := util.DeserializeAddr(msg.Payload)
+	if err != nil {
+		log.Println("ERROR: HandleTransferReq - ", err)
+	} else {
+		log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.CreateAddressStringFromAddr(addr))
+	}
 
 	return nil, false
 }
 
 // TRANSFER_RES internal msg
 func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
+	if msg.Payload == nil {
+		log.Println("ERROR: HandleDataTransferRes - Coordinator address can't be null")
+		return
+	}
+
 	// Check if the transfer is expected
 	for i, transfer := range pendingTransfers {
 		if string(util.SerializeAddr(transfer.coordinator)) == string(msg.Payload) &&
@@ -370,7 +388,12 @@ func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 		}
 	}
 
-	log.Println("ERROR: Recieved unexpected data tranfer response for ", util.DeserializeAddr(msg.Payload))
+	addr, err := util.DeserializeAddr(msg.Payload)
+	if err != nil {
+		log.Println("ERROR: HandleDataTransferRes - ", err)
+	} else {
+		log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.CreateAddressStringFromAddr(addr))
+	}
 }
 
 // TRANSFER_FINISHED_MSG internal msg type
@@ -384,11 +407,12 @@ func HandleTransferFinishedReq(msg *pb.InternalMsg) {
 	}
 
 	if !removed {
-		log.Println("ERROR: Unexpected HandleTransferFinishedReq", util.DeserializeAddr(msg.Payload))
+		addr, _ := util.DeserializeAddr(msg.Payload)
+		log.Println("ERROR: Unexpected HandleTransferFinishedReq", util.CreateAddressStringFromAddr(addr))
 	}
 }
 
-// FORWARDED_CHAIN_UPDATE msg type
+// FORWARDED_CHAIN_UPDATE_REQ msg type
 func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) {
 	log.Println("Received Forwarded Chain update")
 	// Unmarshal KVRequest
@@ -401,7 +425,7 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 	// Sanity check
 	if !predecessors[0].keys.includesKey(key) && !predecessors[1].keys.includesKey(key) {
 		log.Println("HandleForwardedChainUpdate: how did we get here?")
-		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE message received at wrong node")
+		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE_REQ message received at wrong node")
 	}
 
 	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount

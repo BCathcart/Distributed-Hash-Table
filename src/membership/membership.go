@@ -130,7 +130,8 @@ func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int
 	memberStore_.members = append(memberStore_.members, &pb.Member{Ip: []byte(ip), Port: port, Key: key, Heartbeat: 0, Status: status})
 	memberStore_.position = 0
 	memberStore_.mykey = key
-	chainReplication.Init(0, math.MaxUint32)
+	localAddr, _ := util.GetAddr(ip, int(port))
+	chainReplication.Init(localAddr, 0, math.MaxUint32)
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {

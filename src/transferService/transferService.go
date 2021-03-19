@@ -45,7 +45,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				continue
 			}
 
-			err = requestreply.SendDataTransferMessage(serPayload, addr)
+			requestreply.SendDataTransferMessage(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
 			doesn't wait for response to delete from local kvStore
@@ -76,12 +76,12 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 		return err
 	}
 
-	requestreply.SendDataTransferAck(serPayload, addr)
+	// TODO: send ack
 
 	err = kvstore.InternalDataUpdate(kvRequest)
 	return err
 }
 
 func HandleDataAck() {
-	// remove from waiting ack store
+	// remove from "waiting ack" store
 }
