@@ -115,6 +115,8 @@ func (ms *MemberStore) getCurrMember() *pb.Member {
 	return member
 }
 
+// get a random STATUS_NORMAL member from the memberstore
+// return nil if there is no other valid member
 func (ms *MemberStore) getRandMember() *pb.Member {
 	//pick a node at random to gossip to
 	var member *pb.Member
@@ -126,7 +128,6 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	membersCopy = filterForStatusNormal(membersCopy)
 
 	if len(membersCopy) == 1 {
-		log.Println("Warn: only one STATUS_NORMAL node")
 		ms.lock.RUnlock()
 		return nil
 	}
@@ -142,10 +143,13 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	return member
 }
 
-func (ms *MemberStore) getLength() int {
-	ms.lock.RLock()
-	count := len(ms.members)
-	ms.lock.RUnlock()
+func (ms *MemberStore) getCountStatusNormal() int {
+	count := 0
+	for i := 0; i < len(ms.members); i++ {
+		if memberStore_.members[i].Status == STATUS_NORMAL {
+			count++
+		}
+	}
 	return count
 }
 

@@ -5,6 +5,7 @@ import (
 	"net"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/golang/protobuf/proto"
 )
@@ -20,6 +21,23 @@ func tickHeartbeat() {
 
 // Sends the entire member array in the MemberStore.
 func gossipHeartbeat(addr *net.Addr) {
+
+	// Pick random member if an address is not provided
+	var ip string
+	var port int
+	if addr == nil {
+		member := memberStore_.getRandMember()
+		if member == nil {
+			log.Println("No members to send to")
+			return
+		}
+		ip = string(member.GetIp())
+		port = int(member.GetPort())
+	} else {
+		ip = (*addr).(*net.UDPAddr).IP.String()
+		port = (*addr).(*net.UDPAddr).Port
+	}
+
 	// Package MemberStore.members array
 	members := &pb.Members{}
 	memberStore_.lock.RLock()
@@ -32,22 +50,6 @@ func gossipHeartbeat(addr *net.Addr) {
 	if err != nil {
 		log.Println(err)
 		return
-	}
-
-	// Pick random member if an address is not provided
-	var ip string
-	var port int
-	if addr == nil {
-		member := memberStore_.getRandMember()
-		if member == nil {
-			log.Println("ERROR: no members to send to")
-			return
-		}
-		ip = string(member.GetIp())
-		port = int(member.GetPort())
-	} else {
-		ip = (*addr).(*net.UDPAddr).IP.String()
-		port = (*addr).(*net.UDPAddr).Port
 	}
 
 	err = requestreply.SendHeartbeatMessage(gspPayload, ip, port)
@@ -104,7 +106,20 @@ func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	// get the last 3 predecessors
+	preds := searchForPredecessors(memberStore_.position, 3)
+	addresses, keys := getPredAddresses(preds)
+	successor, _ := getSuccessorFromPos(memberStore_.position)
 	memberStore_.lock.Unlock()
+
+	if successor != nil {
+		successorAddr, _ := getMemberAddr(successor)
+		successorKey := successor.GetKey()
+		chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
+	} else {
+		chainReplication.UpdateSuccessor(nil, 0, 0)
+	}
+	chainReplication.UpdatePredecessors(addresses, keys, memberStore_.mykey)
 
 	log.Println(memberStore_.members)
 

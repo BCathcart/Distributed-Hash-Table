@@ -18,9 +18,10 @@ import (
 /**
 * Passes external messages to the appropriate handler function
  */
-func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error) {
-	var resPayload []byte = nil
+func InternalMsgHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
+	var payload []byte = nil
 	var err error = nil
+	var fwdAddr *net.Addr = nil
 	respond := true
 
 	switch msg.InternalID {
@@ -52,68 +53,75 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (bool, []byte, error
 		// Send nil payload back
 		log.Println("Got PINGed")
 
+	case requestreply.FORWARDED_CHAIN_UPDATE:
+		fwdAddr, payload, err = chainReplication.HandleForwardedChainUpdate(msg)
+
 	default:
 		log.Println("WARN: Invalid InternalID: " + strconv.Itoa(int(msg.InternalID)))
-		return false, nil, errors.New("Invalid InternalID Error")
+		return nil, false, nil, errors.New("Invalid InternalID Error")
 	}
 
-	return respond, resPayload, err
+	return fwdAddr, respond, payload, err
 }
 
 /**
  * Passes external messages to the appropriate handler function if they belong to this node.
  * Forwards them to the correct node otherwise.
+ * @return the address to forward the message if applicable, nil otherwise
+ * @return true if the forwarded message if of type FORWARDED_CHAIN_UPDATE, false otherwise
+ * @return the payload of reply or forwarded message
+ * @return an error in case of failure
  */
-func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
+func ExternalMsgHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, false, nil, err
 	}
+	// try to handle the request here at this node
+	fwdAddr, payload, isMine, err := chainReplication.HandleClientRequest(kvRequest)
+	if isMine {
+		if kvstore.IsUpdateRequest(kvRequest) {
+			// Forward any updates to the bootstrapping predecessor to keep sequential consistency
+			memberStore_.lock.RLock()
+			transferNodeAddr := memberStore_.transferNodeAddr
+			memberStore_.lock.RUnlock()
+			if transferNodeAddr != nil {
+				requestreply.SendDataTransferMessage(msg.GetPayload(), memberStore_.transferNodeAddr)
+			}
+		}
+		// the request was handled by this node
+		return fwdAddr, true, payload, err
+	}
+	// the request does not belong to this node, route it to the right node
 
 	key := util.Hash(kvRequest.GetKey())
 
-	// TODO: handle case when the key is null
-
 	memberStore_.lock.RLock()
-	transferNdAddr := memberStore_.transferNodeAddr
+	// transferNdAddr := memberStore_.transferNodeAddr
 	transferRcvNdKey := getKeyOfNodeTransferringTo()
 
-	member, pos := searchForSuccessor(key, transferRcvNdKey)
+	member, pos := searchForSuccessor(key, transferRcvNdKey) //TODO transferRcvNdKey?
 	successorIP := member.GetIp()
 	successorPort := member.GetPort()
 
-	thisMemberPos := memberStore_.position
+	tail, _ := searchForTail(pos)
 	memberStore_.lock.RUnlock()
 
-	// TODO(Brennan): ask replition manager if it wants to handle it.
-	// This will handle it if it's a GET request that this node is a tail for
-	// or it's an PUT or REMOVE request that this node is the head for.
+	fwdAddr = nil
 
-	var forwardAddr *net.Addr
-
-	if transferRcvNdKey != nil && *transferRcvNdKey == member.Key {
-		log.Println("transferRcvNdKey: This index: ", thisMemberPos, ", Successor index: ", pos)
-		payload, err, isUpdate := kvstore.RequestHandler(kvRequest, GetMembershipCount())
-
-		// Forward any updates to the bootstrapping predecessor to keep sequential consistency
-		if isUpdate {
-			requestreply.SendDataTransferMessage(msg.GetPayload(), transferNdAddr)
-		}
-
-		return nil, addr, payload, err
-
-	} else if pos == thisMemberPos {
-		log.Println("This index: ", thisMemberPos, ", Successor index: ", pos)
-		payload, err, _ := kvstore.RequestHandler(kvRequest, GetMembershipCount()) //TODO change membershipcount
-		return nil, addr, payload, err
-	} else {
-		forwardAddr, err = util.GetAddr(string(successorIP), int(successorPort))
+	if kvstore.IsGetRequest(kvRequest) {
+		fwdAddr, err = util.GetAddr(string(tail.GetIp()), int(tail.GetPort()))
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, false, nil, err
+		}
+	} else if kvstore.IsUpdateRequest(kvRequest) {
+		fwdAddr, err = util.GetAddr(string(successorIP), int(successorPort))
+		if err != nil {
+			return nil, false, nil, err
 		}
 	}
+	return fwdAddr, false, nil, nil
 
-	return *forwardAddr, addr, msg.GetPayload(), nil
 }

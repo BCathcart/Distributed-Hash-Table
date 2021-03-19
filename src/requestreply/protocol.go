@@ -37,9 +37,9 @@ const MAX_BUFFER_SIZE = 11000
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
  */
-func RequestReplyLayerInit(connection *net.PacketConn,
-	externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error),
+func Init(connection *net.PacketConn,
+	externalReqHandler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error),
+	internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error),
 	nodeUnavailableHandler func(addr *net.Addr)) {
 
 	/* Store handlers */
@@ -147,7 +147,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal bool) {
+func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
 	checksum := computeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
@@ -158,6 +158,7 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, isInternal boo
 
 	// Specify it is a response if the destination is another server
 	if isInternal {
+		resMsg.InternalID = internal_id
 		resMsg.IsResponse = true
 	}
 
@@ -187,6 +188,11 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 			Payload:   resMsg.Payload,
 			CheckSum:  resMsg.CheckSum,
 		}
+		/************DEBUGGING****************
+		kvResponse := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.GetPayload(), kvResponse)
+		log.Println("Sending Response to client VALUE:", kvstore.BytetoInt(kvResponse.GetValue()))
+		**************************************/
 	}
 
 	serMsg, err := proto.Marshal(resMsg)
@@ -207,14 +213,17 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 * @param returnAddr The address to forward the response to, nil if the response shouldn't be forwarded.
 * @param reqMsg The message to send.
  */
-func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg) {
-	//log.Println("Forwarding Request--------------")
+func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg, isForwardedChainUpdate bool) {
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
 	if reqMsg.InternalID == EXTERNAL_REQUEST {
 		reqMsg.InternalID = FORWARDED_CLIENT_REQ
 		isFirstHop = true
+	}
+
+	if isForwardedChainUpdate {
+		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE
 	}
 
 	serMsg, err := proto.Marshal(reqMsg)
@@ -261,20 +270,20 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// TODO: handle DATA_TRANSFER case
 	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
-		respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
+		fwdAddr, respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
 			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 			return
 		}
-
-		if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, true)
+		if fwdAddr != nil {
+			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
+		} else if respond {
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
 		}
 		return
 	}
 
-	// TODO: If key corresponds to this node: Pass message to handler
-	fwdAddr, returnAddr, payload, err := getExternalReqHandler()(returnAddr, reqMsg)
+	fwdAddr, isForwardedChainUpdate, payload, err := getExternalReqHandler()(reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
@@ -282,10 +291,10 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID == FORWARDED_CLIENT_REQ)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQUEST)
 	} else {
 		// Forward request if key doesn't correspond to this node:
-		forwardUDPRequest(&fwdAddr, &returnAddr, reqMsg)
+		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
 	}
 
 }
@@ -305,10 +314,18 @@ func processResponse(resMsg *pb.InternalMsg) {
 	req := reqCache_.data.Get(string(resMsg.MessageID))
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
+		/************DEBUGGING****************
+		res := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.Payload, res)
+		**************************************/
 
 		// If cached request has return address, forward the request
 		if reqCacheEntry.returnAddr != nil {
+			// log.Println("Forwarding response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()), "to", (*reqCacheEntry.returnAddr).String())
+
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
+		} else {
+			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
 		}
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
@@ -320,7 +337,12 @@ func processResponse(resMsg *pb.InternalMsg) {
 		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
-		log.Println("WARN: Received response for unknown request")
+		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)
+		/************DEBUGGING****************
+		res := &pb.KVResponse{}
+		proto.Unmarshal(resMsg.Payload, res)
+		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID, "for value", kvstore.BytetoInt(res.GetValue()))
+		***************************************/
 	}
 	reqCache_.lock.Unlock()
 }

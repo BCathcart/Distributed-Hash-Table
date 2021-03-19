@@ -2,11 +2,13 @@ package membership
 
 import (
 	"log"
+	"math"
 	"math/rand"
 	"net"
 	"strconv"
 	"time"
 
+	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
@@ -83,7 +85,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
 
 	if targetMemberIdx == memberStore_.position {
-		predKey, _ := getPredecessor2(targetKey)
+		predKey, _ := getPredecessor(targetKey)
 		// curKey := memberStore_.getCurrMember().Key
 		memberStore_.lock.RUnlock()
 
@@ -112,7 +114,7 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
 }
 
-func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
+func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 
 	key := util.GetNodeKey(ip, strconv.Itoa(int(port)))
@@ -128,15 +130,14 @@ func MembershipLayerInit(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip s
 	memberStore_.members = append(memberStore_.members, &pb.Member{Ip: []byte(ip), Port: port, Key: key, Heartbeat: 0, Status: status})
 	memberStore_.position = 0
 	memberStore_.mykey = key
+	chainReplication.Init(0, math.MaxUint32)
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {
 		for {
 			<-ticker.C
 			tickHeartbeat()
-			if /* memberStore_.getCurrMember().Status != STATUS_BOOTSTRAPPING && */ memberStore_.getLength() != 1 {
-				gossipHeartbeat(nil)
-			}
+			gossipHeartbeat(nil)
 		}
 	}()
 
