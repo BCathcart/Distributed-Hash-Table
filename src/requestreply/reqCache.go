@@ -67,7 +67,7 @@ func sweepReqCache() {
 
 	// Send ping requests
 	for _, addr := range membersToPing {
-		sendUDPRequest(addr, nil, PING)
+		sendUDPRequest(addr, nil, PING_MSG)
 	}
 
 }
@@ -106,8 +106,8 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 
 			// Handle expired internal requests
 		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
-			if reqCacheEntry.msgType == PING {
-				log.Println("PING TIMED OUT")
+			if reqCacheEntry.msgType == PING_MSG {
+				log.Println("PING_MSG TIMED OUT")
 				go getNodeUnavailableHandler()(reqCacheEntry.addr)
 
 			} else {
@@ -139,7 +139,7 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 * @param isFirstHop True if the request originated from a client and is being forwarded internally for the first time, false otherwise
  */
 func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, returnAddr *net.Addr, isFirstHop bool) {
-	if isFirstHop && (msgType != FORWARDED_CLIENT_REQ && msgType != FORWARDED_CHAIN_UPDATE) {
+	if isFirstHop && (msgType != FORWARDED_CLIENT_REQ && msgType != FORWARDED_CHAIN_UPDATE_REQ) {
 		panic("isFirstHop can only be true for client requests")
 	}
 

@@ -14,7 +14,7 @@ import (
 /* Membership protocol - transfers the necessary data to a joined node
 @param ipStr/PortStr address to transfer keys to
 @param predecessorKey key to transfer to
-Sends a TRANSFER_FINISHED when it's done
+Sends a TRANSFER_FINISHED_MSG when it's done
 */
 
 func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
@@ -45,7 +45,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				continue
 			}
 
-			err = requestreply.SendDataTransferMessage(serPayload, addr)
+			requestreply.SendDataTransferMessage(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
 			doesn't wait for response to delete from local kvStore
@@ -60,12 +60,14 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 
 	log.Println("SENDING TRANSFER FINISHED TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
 
-	_ = requestreply.SendTransferFinished([]byte(""), addr)
+	requestreply.SendTransferFinished([]byte(""), addr)
 
-	transferFinishedCallback()
+	if transferFinishedCallback != nil {
+		transferFinishedCallback()
+	}
 }
 
-// DATA_TRANSFER internal msg type
+// DATA_TRANSFER_MSG internal msg type
 func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
@@ -74,6 +76,12 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 		return err
 	}
 
+	// TODO: send ack
+
 	err = kvstore.InternalDataUpdate(kvRequest)
 	return err
+}
+
+func HandleDataAck() {
+	// remove from "waiting ack" store
 }
