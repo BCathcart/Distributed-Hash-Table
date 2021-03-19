@@ -22,20 +22,16 @@ import (
 	In the case that there is no predecessor or the node is the third predecessor,
 	the low parameter will be set to the current key.
 */
-type keyRange struct {
-	low  uint32
-	high uint32
-}
 
 type successorNode struct {
-	keys keyRange
+	keys util.KeyRange
 	addr *net.Addr
 }
 
 // TODO: need reference to this nodes KV store?
 
 type predecessorNode struct {
-	keys        keyRange
+	keys        util.KeyRange
 	addr        *net.Addr
 	transferred bool
 	// TODO: add kvStore instance here?
@@ -61,17 +57,10 @@ var thisKey uint32
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
 var pendingRcvingTransfers []*net.Addr
-var mykeys keyRange
-
-func (k keyRange) includesKey(key uint32) bool {
-	if k.low < k.high {
-		return key <= k.high && key >= k.low
-	}
-	return key >= k.low || key <= k.high
-}
+var mykeys util.KeyRange
 
 // @return the keyrange for the HEAD of the current chain
-func getHeadKeys() keyRange {
+func getHeadKeys() util.KeyRange {
 	head := predecessors[1]
 	if head == nil {
 		head = predecessors[0]
@@ -340,14 +329,21 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 		return nil, nil, err
 	}
 	key := util.Hash(kvRequest.GetKey())
-	// Sanity check
-	if !predecessors[0].keys.includesKey(key) && !predecessors[1].keys.includesKey(key) {
+
+	// Find out where the request originated
+	var ownerKeys util.KeyRange
+	if predecessors[0].keys.IncludesKey(key) {
+		ownerKeys = predecessors[0].keys
+	} else if predecessors[1].keys.IncludesKey(key) {
+		ownerKeys = predecessors[1].keys
+	} else {
 		log.Println("HandleForwardedChainUpdate: how did we get here?")
 		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE message received at wrong node")
 	}
 
-	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
-	if errcode != kvstore.OK || getHeadKeys().includesKey(key) {
+	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, ownerKeys) //TODO change membershipcount
+
+	if errcode != kvstore.OK || getHeadKeys().IncludesKey(key) {
 		// don't forward if this is the tail or if the request failed
 		log.Println("Replying to Forwarded Chain update")
 
@@ -369,14 +365,14 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 	keyByte := kvRequest.Key
 	if keyByte == nil || !kvstore.IsKVRequest(kvRequest) {
 		// Any type of client request besides key-value requests gets handled here
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
 		return nil, payload, true, err
 	}
 	key := util.Hash(keyByte)
 
 	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
-	if mykeys.includesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
-		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if mykeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
 		if errcode != kvstore.OK || successor == nil {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
@@ -385,8 +381,8 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 	}
 
 	// GET responded to here if they correspond to predecessors[0]
-	if getHeadKeys().includesKey(key) && kvstore.IsGetRequest(kvRequest) {
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if getHeadKeys().IncludesKey(key) && kvstore.IsGetRequest(kvRequest) {
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, getHeadKeys()) //TODO change membershipcount
 		return nil, payload, true, err
 	}
 	return nil, nil, false, nil

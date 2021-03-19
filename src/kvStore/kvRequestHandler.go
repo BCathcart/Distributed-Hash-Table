@@ -84,7 +84,7 @@ func handleOverload() *pb.KVResponse {
 * @return Error object if there was an error, nil otherwise.
 * @return the errorcode
  */
-func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner util.KeyRange) ([]byte, error, uint32) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -153,7 +153,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		os.Exit(1)
 
 	case WIPEOUT:
-		kvStore_.Wipeout()
+		kvStore_.WipeoutKeys(requestOwner)
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
 
