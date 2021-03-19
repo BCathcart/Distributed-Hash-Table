@@ -22,20 +22,16 @@ import (
 	In the case that there is no predecessor or the node is the third predecessor,
 	the low parameter will be set to the current key.
 */
-type keyRange struct {
-	low  uint32
-	high uint32
-}
 
 type successorNode struct {
-	keys keyRange
+	keys util.KeyRange
 	addr *net.Addr
 }
 
 // TODO: need reference to this nodes KV store?
 
 type predecessorNode struct {
-	keys        keyRange
+	keys        util.KeyRange
 	addr        *net.Addr
 	transferred bool
 	// TODO: add kvStore instance here?
@@ -61,17 +57,10 @@ var thisKey uint32
 var pendingSendingTransfers []*net.Addr
 var sendingTransfers []*net.Addr
 var pendingRcvingTransfers []*net.Addr
-var mykeys keyRange
-
-func (k keyRange) includesKey(key uint32) bool {
-	if k.low < k.high {
-		return key <= k.high && key >= k.low
-	}
-	return key >= k.low || key <= k.high
-}
+var mykeys util.KeyRange
 
 // @return the keyrange for the HEAD of the current chain
-func getHeadKeys() keyRange {
+func getHeadKeys() util.KeyRange {
 	head := predecessors[1]
 	if head == nil {
 		head = predecessors[0]
@@ -79,15 +68,15 @@ func getHeadKeys() keyRange {
 	headkeys := mykeys
 	if head != nil {
 		//DEBUGGING
-		log.Println("the head is", (*head.addr).String())
+		// log.Println("the head is", (*head.addr).String())
 		headkeys = head.keys
 	}
 	return headkeys
 }
 
 func Init(keylow uint32, keyhigh uint32) {
-	mykeys.low = keylow
-	mykeys.high = keyhigh
+	mykeys.Low = keylow
+	mykeys.High = keyhigh
 	// Init successor and predecessors
 	prepareForBootstrapTransfer(nil)
 }
@@ -112,24 +101,24 @@ func getPredAddr(predIdx int) *net.Addr {
 
 func getPredKey(predNode *predecessorNode) uint32 {
 	if predNode == nil {
-		return mykeys.high
+		return mykeys.High
 	}
-	return predNode.keys.high
+	return predNode.keys.High
 }
 
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
-	mykeys.high = key
+	mykeys.High = key
 	var newPredecessors [3]*predecessorNode
 	for i := 0; i < 2; i++ {
 		if addr[i] != nil {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
-			newPredecessors[i].keys.high = keys[i]
+			newPredecessors[i].keys.High = keys[i]
 			if addr[i+1] != nil {
-				newPredecessors[i].keys.low = keys[i+1] + 1
+				newPredecessors[i].keys.Low = keys[i+1] + 1
 			} else {
-				newPredecessors[i].keys.low = key + 1
+				newPredecessors[i].keys.Low = key + 1
 			}
 		} else {
 			newPredecessors[i] = nil
@@ -139,12 +128,12 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
 	predecessors = newPredecessors                                  // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
-		mykeys.low = newPredecessors[0].keys.high + 1
+		mykeys.Low = newPredecessors[0].keys.High + 1
 	}
 
 	// for i := 0; i < 2; i++ {
 	// 	if predecessors[i] != nil {
-	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.low, predecessors[i].keys.high)
+	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.Low, predecessors[i].keys.High)
 }
 
 func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) bool {
@@ -153,7 +142,7 @@ func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) boo
 	}
 	// Only check the "high" range of the keys. A change of the "low" indicates the node
 	// Has a new predecessor, but not necessarily that the node itself has changed.
-	return newPred.keys.high == oldPred.keys.high
+	return newPred.keys.High == oldPred.keys.High
 }
 
 /*
@@ -192,8 +181,8 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	*/
 	if pred1Equal && pred2Equal {
 		// New node has joined
-		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
-			sweepCache(newPred3.keys.low, newPred3.keys.high)
+		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.Low, oldPred2.keys.Low, oldPred2.keys.High)) {
+			sweepCache(newPred3.keys.Low, newPred3.keys.High)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 		}
@@ -209,10 +198,10 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			// TODO: sweepCache(oldPredKey3, oldPredKey2)
-			sweepCache(newPred2.keys.low, newPred2.keys.high)
+			sweepCache(newPred2.keys.Low, newPred2.keys.High)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
-			transferKeys(successor.addr, oldPred2.keys.high, oldPred2.keys.low)
+			transferKeys(successor.addr, oldPred2.keys.High, oldPred2.keys.Low)
 			//sendDataTransferReq(oldPred2.addr)
 		} else {
 			UnhandledScenarioError(newPredecessors)
@@ -223,19 +212,19 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred1 == nil || newPred1 == nil {
 			return
 		}
-		if util.BetweenKeys(newPred1.keys.high, oldPred1.keys.high, mykeys.high) { // New node has joined
+		if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, mykeys.High) { // New node has joined
 			// TODO: bootstrap transfer?
 			if oldPred2 != nil {
-				sweepCache(oldPred2.keys.low, oldPred2.keys.high)
+				sweepCache(oldPred2.keys.Low, oldPred2.keys.High)
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 			if oldPred2 != nil {
-				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+				transferKeys(successor.addr, oldPred2.keys.Low, oldPred2.keys.High)
 			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
 			if oldPred2 != nil {
-				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+				transferKeys(successor.addr, oldPred2.keys.Low, oldPred2.keys.High)
 			}
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
@@ -263,7 +252,7 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 		if predecessors[i] == nil {
 			log.Println(" NIL ")
 		} else {
-			log.Println(predecessors[i].keys.high)
+			log.Println(predecessors[i].keys.High)
 		}
 	}
 	log.Println("NEW KEYS")
@@ -271,7 +260,7 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 		if newPredecessors[i] == nil {
 			log.Println(" NIL ")
 		} else {
-			log.Println(newPredecessors[i].keys.high)
+			log.Println(newPredecessors[i].keys.High)
 		}
 	}
 	log.Fatalf("UNHANDLED SCENARIO, INTENTIONALLY CRASHING (REMOVE THIS FUNCTION LATER)")
@@ -294,7 +283,7 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	if succAddr == nil {
 		successor = nil
 	}
-	successor = &successorNode{addr: succAddr, keys: keyRange{low: minKey, high: maxKey}}
+	successor = &successorNode{addr: succAddr, keys: util.KeyRange{Low: minKey, High: maxKey}}
 }
 
 func startBootstrapTransfer(predAddr *net.Addr) {
@@ -340,14 +329,21 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 		return nil, nil, err
 	}
 	key := util.Hash(kvRequest.GetKey())
-	// Sanity check
-	if !predecessors[0].keys.includesKey(key) && !predecessors[1].keys.includesKey(key) {
+
+	// Find out where the request originated
+	var ownerKeys util.KeyRange
+	if predecessors[0].keys.IncludesKey(key) {
+		ownerKeys = predecessors[0].keys
+	} else if predecessors[1].keys.IncludesKey(key) {
+		ownerKeys = predecessors[1].keys
+	} else {
 		log.Println("HandleForwardedChainUpdate: how did we get here?")
 		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE message received at wrong node")
 	}
 
-	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
-	if errcode != kvstore.OK || getHeadKeys().includesKey(key) {
+	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, ownerKeys) //TODO change membershipcount
+
+	if errcode != kvstore.OK || getHeadKeys().IncludesKey(key) {
 		// don't forward if this is the tail or if the request failed
 		log.Println("Replying to Forwarded Chain update")
 
@@ -369,14 +365,14 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 	keyByte := kvRequest.Key
 	if keyByte == nil || !kvstore.IsKVRequest(kvRequest) {
 		// Any type of client request besides key-value requests gets handled here
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
 		return nil, payload, true, err
 	}
 	key := util.Hash(keyByte)
 
 	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
-	if mykeys.includesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
-		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if mykeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
 		if errcode != kvstore.OK || successor == nil {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
@@ -385,8 +381,8 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 	}
 
 	// GET responded to here if they correspond to predecessors[0]
-	if getHeadKeys().includesKey(key) && kvstore.IsGetRequest(kvRequest) {
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1) //TODO change membershipcount
+	if getHeadKeys().IncludesKey(key) && kvstore.IsGetRequest(kvRequest) {
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, getHeadKeys()) //TODO change membershipcount
 		return nil, payload, true, err
 	}
 	return nil, nil, false, nil

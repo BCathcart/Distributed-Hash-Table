@@ -4,6 +4,8 @@ import (
 	"container/list"
 	"strings"
 	"sync"
+
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /* KEY VALUE STORE */
@@ -170,4 +172,17 @@ func (kvs *KVStore) getAllKeys() []string {
 
 	kvs.lock.RUnlock()
 	return keyList
+}
+
+func (kvs *KVStore) WipeoutKeys(keys util.KeyRange) {
+	kvs.lock.Lock()
+
+	for e := kvs.data.Front(); e != nil; e = e.Next() {
+		key := e.Value.(kventry).key
+		if keys.IncludesKey(util.Hash([]byte(key))) {
+			kvs.Remove(key)
+		}
+	}
+
+	kvs.lock.Unlock()
 }
