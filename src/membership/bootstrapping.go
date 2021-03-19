@@ -37,7 +37,7 @@ sets status to normal
 func bootstrapTransferFinishedHandler(memberStore *MemberStore) {
 	log.Println("RECEIVED TRANSFER FINISHED MSG")
 
-	memberStore.lock.RLock()
+	memberStore.lock.Lock()
 	memberStore.members[memberStore.position].Status = STATUS_NORMAL
-	memberStore.lock.RUnlock()
+	memberStore.lock.Unlock()
 }
