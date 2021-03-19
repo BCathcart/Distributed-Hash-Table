@@ -79,7 +79,7 @@ func getHeadKeys() keyRange {
 	headkeys := mykeys
 	if head != nil {
 		//DEBUGGING
-		log.Println("the head is", (*head.addr).String(), "\n")
+		log.Println("the head is", (*head.addr).String())
 		headkeys = head.keys
 	}
 	return headkeys
@@ -180,12 +180,12 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	newPred1, newPred2, newPred3 := newPredecessors[0], newPredecessors[1], newPredecessors[2]
 	pred1Equal := comparePredecessors(newPred1, oldPred1)
 	pred2Equal := comparePredecessors(newPred2, oldPred2)
-	pred3Equal := comparePredecessors(newPred3, oldPred3)
+	//pred3Equal := comparePredecessors(newPred3, oldPred3)
 
 	// If none of the previous three have changed, no need to update.
-	if pred1Equal && pred2Equal && pred3Equal {
-		return
-	}
+	//if pred1Equal && pred2Equal && pred3Equal {
+	//	return
+	//}
 	PrintKeyChange(newPredecessors)
 	/*
 		First and second predecessors stay the same (third is different).
