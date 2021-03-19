@@ -146,12 +146,12 @@ func getPredKey(predNode *predecessorNode) uint32 {
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	mykeys.high = key
 	var newPredecessors [3]*predecessorNode
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		if addr[i] != nil {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
 			newPredecessors[i].keys.high = keys[i]
-			if addr[i+1] != nil {
+			if i < 2 && addr[i+1] != nil {
 				newPredecessors[i].keys.low = keys[i+1] + 1
 			} else {
 				newPredecessors[i].keys.low = key + 1
@@ -162,8 +162,6 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 		}
 	}
 	checkAddresses(addr, keys)
-	//log.Println("About to check, OLD = ", predecessors)
-	//log.Println("New = ", newPredecessors)
 	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
 	copyPredecessors(newPredecessors)                               // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
