@@ -172,20 +172,18 @@ func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) boo
 	newPredAddr2 and newPredAddr3 must also be nil.
 */
 
-//func checkPredecessors(newPredAddr1 *net.Addr, newPredAddr2 *net.Addr, newPredAddr3 *net.Addr) {
 func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transferFunc, sweepCache sweeperFunc) {
 	// Converting addresses to equivalent keys.
-	//oldPredAddr1, oldPredAddr2, oldPredAddr3 := getPredAddr(0), getPredAddr(1), getPredAddr(2)
 	oldPred1, oldPred2, oldPred3 := predecessors[0], predecessors[1], predecessors[2]
 	newPred1, newPred2, newPred3 := newPredecessors[0], newPredecessors[1], newPredecessors[2]
 	pred1Equal := comparePredecessors(newPred1, oldPred1)
 	pred2Equal := comparePredecessors(newPred2, oldPred2)
-	//pred3Equal := comparePredecessors(newPred3, oldPred3)
+	pred3Equal := comparePredecessors(newPred3, oldPred3)
 
 	// If none of the previous three have changed, no need to update.
-	//if pred1Equal && pred2Equal && pred3Equal {
-	//	return
-	//}
+	if pred1Equal && pred2Equal && pred3Equal {
+		return
+	}
 	PrintKeyChange(newPredecessors)
 	/*
 		First and second predecessors stay the same (third is different).
@@ -195,8 +193,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	if pred1Equal && pred2Equal {
 		// New node has joined
 		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
-			// TODO: sweepCache(oldPredKey3, newPredKey3)
-			sweepCache(newPred2.keys.low, newPred2.keys.high)
+			sweepCache(newPred3.keys.low, newPred3.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			pendingRcvingTransfers = append(pendingRcvingTransfers, newPred1.addr)
 		}
