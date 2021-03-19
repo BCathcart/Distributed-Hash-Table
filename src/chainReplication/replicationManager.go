@@ -51,6 +51,16 @@ type transferInfo struct {
 type transferFunc func(addr *net.Addr, lowKey uint32, highKey uint32)
 type sweeperFunc func(lowKey uint32, highKey uint32)
 
+func shallowCopy(orig *predecessorNode) *predecessorNode {
+	if orig == nil {
+		return nil
+	}
+	return &predecessorNode{
+		keys: orig.keys,
+		addr: orig.addr,
+	}
+}
+
 // Replace with actual transfer / sweeper functions when merging with shay & brennan code
 func dummyTransfer(addr *net.Addr, lowKey uint32, highKey uint32) {
 	log.Printf("Called Transfer function with range [%v, %v], addr, %v \n", lowKey, highKey, (*addr).String())
@@ -136,12 +146,12 @@ func getPredKey(predNode *predecessorNode) uint32 {
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	mykeys.high = key
 	var newPredecessors [3]*predecessorNode
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		if addr[i] != nil {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
 			newPredecessors[i].keys.high = keys[i]
-			if addr[i+1] != nil {
+			if i < 2 && addr[i+1] != nil {
 				newPredecessors[i].keys.low = keys[i+1] + 1
 			} else {
 				newPredecessors[i].keys.low = key + 1
@@ -151,8 +161,9 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			break
 		}
 	}
+	checkAddresses(addr, keys)
 	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
-	predecessors = newPredecessors                                  // TODO: Not sure if I can do this, seems a bit hacky
+	copyPredecessors(newPredecessors)                               // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
 		mykeys.low = newPredecessors[0].keys.high + 1
 	}
@@ -160,6 +171,29 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	// for i := 0; i < 2; i++ {
 	// 	if predecessors[i] != nil {
 	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.low, predecessors[i].keys.high)
+}
+
+func copyPredecessors(newPredecessors [3]*predecessorNode) {
+	for i := 0; i < len(newPredecessors); i++ {
+		predecessors[i] = shallowCopy(newPredecessors[i])
+	}
+}
+
+func checkAddresses(addr []*net.Addr, keys []uint32) {
+	var addrString = ""
+	for i := 0; i < len(addr); i++ {
+		if addr[i] == nil {
+			addrString = "NIL"
+		} else {
+			addrString = (*addr[i]).String()
+		}
+		if predecessors[i] == nil {
+			log.Printf("OLD: NIL, NEW: %v\n", addrString)
+		} else {
+			log.Printf("OLD: %v, NEW: %v\n", (*getPredAddr(i)).String(), addrString)
+		}
+	}
+	log.Printf("Keys %v\n", keys)
 }
 
 func comparePredecessors(newPred *predecessorNode, oldPred *predecessorNode) bool {
@@ -279,7 +313,7 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 		if predecessors[i] == nil {
 			log.Println(" NIL ")
 		} else {
-			log.Println(predecessors[i].keys.high)
+			log.Println(predecessors[i].keys)
 		}
 	}
 	log.Println("NEW KEYS")
@@ -287,7 +321,7 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 		if newPredecessors[i] == nil {
 			log.Println(" NIL ")
 		} else {
-			log.Println(newPredecessors[i].keys.high)
+			log.Println(newPredecessors[i].keys)
 		}
 	}
 	log.Fatalf("UNHANDLED SCENARIO, INTENTIONALLY CRASHING (REMOVE THIS FUNCTION LATER)")
