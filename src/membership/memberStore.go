@@ -125,15 +125,15 @@ func (ms *MemberStore) getRandMember() *pb.Member {
 	copy(membersCopy, ms.members)
 
 	// Remove all members w/o STATUS_NORMAL
-	membersCopy = filterForStatusNormal(membersCopy)
+	membersCopy, mypos := filterForStatusNormal(membersCopy, ms.position)
 
-	if len(membersCopy) == 1 {
+	if len(membersCopy) == 0 || (mypos != -1 && len(membersCopy) == 1) {
+		//return nil if there are no valid members (other than this node)
 		ms.lock.RUnlock()
 		return nil
 	}
-
-	randi := ms.position
-	for randi == ms.position {
+	randi := mypos
+	for randi == mypos {
 		randi = rand.Intn(len(membersCopy))
 	}
 
@@ -160,20 +160,22 @@ func (ms *MemberStore) get(pos int) *pb.Member {
 	return member
 }
 
-func (ms *MemberStore) removeidx(s int) {
-	if ms.position != s { //TODO don't allow the node to remove itself?
-		ms.members = append(ms.members[:s], ms.members[s+1:]...)
-		if ms.position > s {
-			ms.position--
-		}
+func removeidx(members []*pb.Member, posToRemove int, mypos int) ([]*pb.Member, int) {
+	retpos := mypos
+	members = append(members[:posToRemove], members[posToRemove+1:]...)
+	if mypos > posToRemove {
+		retpos--
+	} else if mypos == posToRemove {
+		retpos = -1
 	}
+	return members, retpos
 }
 
 func (ms *MemberStore) Remove(ip string, port int32) {
 	ms.lock.Lock()
 	idx := ms.findIPPortIndex(ip, int32(port))
 	if idx != -1 {
-		ms.removeidx(idx)
+		ms.members, ms.position = removeidx(ms.members, idx, ms.position)
 	}
 	ms.lock.Unlock()
 }
@@ -189,15 +191,17 @@ func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
 	ms.lock.Unlock()
 }
 
-func filterForStatusNormal(members []*pb.Member) []*pb.Member {
+func filterForStatusNormal(members []*pb.Member, mypos int) ([]*pb.Member, int) {
 	var i int
+	pos := mypos
 	for i < len(members) {
 		if members[i].Status == STATUS_NORMAL {
 			i++
 		} else {
-			// Remove the element
-			members = append(members[:i], members[i+1:]...)
+			log.Println("Removing ")
+			// Remove the element and return our new position in the slice
+			members, pos = removeidx(members, i, pos)
 		}
 	}
-	return members
+	return members, pos
 }
