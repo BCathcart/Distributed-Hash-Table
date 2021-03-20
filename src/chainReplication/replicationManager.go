@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
 
 	"time"
 
@@ -81,6 +82,8 @@ var mykeys keyRange
 var pendingTransfers []*transferInfo
 var expectedTransfers []*net.Addr
 
+var coarseLock sync.RWMutex
+
 func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 	mykeys.low = keylow
 	mykeys.high = keyhigh
@@ -145,6 +148,9 @@ func getPredKey(predNode *predecessorNode) uint32 {
 
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	mykeys.high = key
 	var newPredecessors [3]*predecessorNode
 	for i := 0; i < 3; i++ {
@@ -236,7 +242,12 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	if pred1Equal && pred2Equal && pred3Equal {
 		return
 	}
-	// PrintKeyChange(newPredecessors)
+	PrintKeyChange(newPredecessors)
+
+	log.Println("\n\nNEW PREDECESSOR\n")
+	log.Println(pred1Equal)
+	log.Println(pred2Equal)
+	log.Println(pred3Equal)
 
 	// If we newly joined, expect to receive keys
 	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
@@ -255,7 +266,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			sweepCache(newPred3.keys.low, newPred3.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			if newPred1 != nil {
-				expectedTransfers = append(expectedTransfers, newPred1.addr)
+				expectedTransfers = append(expectedTransfers, newPred2.addr)
 			}
 		}
 	} else if pred1Equal {
@@ -271,12 +282,12 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred2 == nil || newPred2 == nil {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
+			log.Println("\n\nNEW SECOND PREDECESSOR JOINED\n")
 			sweepCache(oldPred2.keys.low, oldPred2.keys.high)
-		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
-			if newPred1 != nil {
-				expectedTransfers = append(expectedTransfers, newPred1.addr)
-			}
-			transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
+		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
+			log.Println("\n\n SECOND PREDECESSOR FAILED\n")
+			expectedTransfers = append(expectedTransfers, newPred2.addr)
+			transferKeys(successor.addr, oldPred1.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high}) // Transfer the new keys P2 got to the successor
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
@@ -287,14 +298,19 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			return
 		}
 		if util.BetweenKeys(newPred1.keys.high, oldPred1.keys.high, mykeys.high) { // New node has joined
+			log.Println("\n\nNEW FIRST PREDECESSOR JOINED\n")
+
 			// TODO: bootstrap transfer?
 			if oldPred2 != nil {
 				sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
-			expectedTransfers = append(expectedTransfers, newPred1.addr)
+			log.Println("\n\n FIRST PREDECESSOR FAILED\n")
+
+			// GOT EXCEPTION HERE
+			expectedTransfers = append(expectedTransfers, newPred2.addr)
 			if oldPred2 != nil {
-				transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
+				transferKeys(successor.addr, oldPred2.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
 			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
 			if oldPred2 != nil {
@@ -342,6 +358,9 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 }
 
 func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	if succAddr == nil {
 		log.Println("ERROR: Successor address cannot be null")
 		return
@@ -354,6 +373,16 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	log.Println("Expected transfer to receive: ")
 	for _, coordinator := range expectedTransfers {
 		log.Println((*coordinator).String())
+	}
+	log.Println("Predecessors:")
+	for _, pred := range predecessors {
+		if pred != nil {
+			log.Println((*pred.addr).String())
+		}
+	}
+	log.Println("Successor: ")
+	if successor != nil {
+		log.Println((*successor.addr).String())
 	}
 
 	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)
@@ -414,6 +443,9 @@ func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys keyRange) 
 
 // TRANSFER_REQ internal msg type
 func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	addr, _ := util.DeserializeAddr(msg.Payload)
 	log.Println("\nRECEIVING TRANSFER REQUEST FOR ", (*addr).String())
 
@@ -449,6 +481,9 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 
 // TRANSFER_RES internal msg
 func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	addr, _ := util.DeserializeAddr(msg.Payload)
 	log.Println("\nRECEIVING TRANSFER ACK FOR ", (*addr).String())
 
@@ -484,17 +519,13 @@ func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 
 // TRANSFER_FINISHED_MSG internal msg type
 func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	addr, _ := util.DeserializeAddr(msg.Payload)
 	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*addr).String())
 
-	var removed = false
-	for i, coorAddr := range expectedTransfers {
-		if string(util.SerializeAddr(coorAddr)) == string(msg.Payload) {
-			expectedTransfers = util.RemoveAddrFromArr(expectedTransfers, i)
-			removed = true
-			return
-		}
-	}
+	removed := removeExpectedTransfer(addr)
 
 	if !removed {
 		addr, _ := util.DeserializeAddr(msg.Payload)
@@ -565,6 +596,25 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 }
 
 /* Helpers */
+func addPendingTransfer(transfer *transferInfo) {
+	removePendingTransfer(transfer.coordinator)
+	pendingTransfers = append(pendingTransfers, transfer)
+}
+
+func addExpectedTransfer(coordinator *net.Addr) {
+	removeExpectedTransfer(coordinator)
+	expectedTransfers = append(expectedTransfers, coordinator)
+}
+
+func removePendingTransfer(coorAddr *net.Addr) {
+	for i := 0; i < len(pendingTransfers); {
+		if util.CreateAddressStringFromAddr(pendingTransfers[i].receiver) == util.CreateAddressStringFromAddr(coorAddr) {
+			pendingTransfers = removeTransferInfoFromArr(pendingTransfers, i)
+			return
+		}
+	}
+}
+
 func removePendingTransfersToAMember(memAddr *net.Addr) {
 	log.Println("REMOVE PENDING TRANSFERS")
 	for i := 0; i < len(pendingTransfers); {
@@ -574,6 +624,16 @@ func removePendingTransfersToAMember(memAddr *net.Addr) {
 			i++
 		}
 	}
+}
+
+func removeExpectedTransfer(coorAddr *net.Addr) bool {
+	for i, addr := range expectedTransfers {
+		if util.CreateAddressStringFromAddr(addr) == util.CreateAddressStringFromAddr(coorAddr) {
+			expectedTransfers = util.RemoveAddrFromArr(expectedTransfers, i)
+			return true
+		}
+	}
+	return false
 }
 
 func removeTransferInfoFromArr(s []*transferInfo, i int) []*transferInfo {
