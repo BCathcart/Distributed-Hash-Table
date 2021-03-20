@@ -81,8 +81,6 @@ var mykeys keyRange
 var pendingTransfers []*transferInfo
 var expectedTransfers []*net.Addr
 
-// TODO: remove pending Transfers as needed when the successor updates
-
 func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 	mykeys.low = keylow
 	mykeys.high = keyhigh
@@ -370,11 +368,20 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		// Clear pending transfers to the old successor
 		removePendingTransfersToAMember(successor.addr)
 
-		isNewMember := maxKey < successor.keys.high
+		// Determine if new successor is between you and the old successor (i.e. a new node)
+		var isNewMember bool
+		if successor.keys.high < mykeys.high {
+			isNewMember = maxKey > mykeys.high || maxKey < successor.keys.high
+		} else {
+			isNewMember = maxKey < successor.keys.high && maxKey > mykeys.high
+		}
+
 		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
 
 		if isNewMember {
 			// If the new successor joined, need to transfer your keys and first predecessor's keys
+
+			log.Println("IS_NEW_MEMBER")
 
 			// Transfer this server's keys to the new successor
 			sendDataTransferReq(succAddr, myAddr, mykeys)

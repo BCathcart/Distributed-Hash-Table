@@ -134,7 +134,6 @@ func ExternalReqHandler(msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
 }
 
 func InternalResHandler(addr net.Addr, msg *pb.InternalMsg) {
-	log.Println("InternalResHandler - Received response of type", msg.GetInternalID())
 	if msg.InternalID == requestreply.TRANSFER_RES {
 		chainReplication.HandleDataTransferRes(&addr, msg)
 	}
