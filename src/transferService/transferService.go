@@ -19,7 +19,7 @@ Sends a TRANSFER_FINISHED_MSG when it's done
 
 func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
 
-	log.Println("TRANSFERRING KEYS TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
+	log.Println("TRANSFERRING KEYS TO MEMBER WITH ADDRESS: ", (*addr).String())
 	localKeyList := kvstore.GetKeyList()
 
 	// TODO a map to hold the keys that need to be transferred and whether they've been successfully sent to predecessor
@@ -58,9 +58,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 		}
 	}
 
-	log.Println("SENDING TRANSFER FINISHED TO PREDECESSOR WITH ADDRESS: ", (*addr).String())
-
-	requestreply.SendTransferFinished([]byte(""), addr)
+	log.Println("TRANSFER FINISHED TO MEMBER WITH ADDRESS: ", (*addr).String())
 
 	if transferFinishedCallback != nil {
 		transferFinishedCallback()

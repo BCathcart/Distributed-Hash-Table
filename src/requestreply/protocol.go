@@ -27,6 +27,7 @@ const TRANSFER_REQ = 0x6
 const DATA_TRANSFER_MSG = 0x7
 const FORWARDED_CHAIN_UPDATE_REQ = 0x8
 const TRANSFER_RES = 0x9
+const GENERIC_RES = 0xA
 
 // Only receive transfer request during bootstrapping
 
@@ -40,7 +41,7 @@ const MAX_BUFFER_SIZE = 11000
  */
 func RequestReplyLayerInit(connection *net.PacketConn,
 	externalReqHandler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error),
+	internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error),
 	nodeUnavailableHandler func(addr *net.Addr),
 	internalResHandler func(addr net.Addr, msg *pb.InternalMsg)) {
 
@@ -150,7 +151,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
+func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id int, isInternal bool) {
 	checksum := computeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
@@ -161,7 +162,7 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id ui
 
 	// Specify it is a response if the destination is another server
 	if isInternal {
-		resMsg.InternalID = internal_id
+		resMsg.InternalID = uint32(internal_id)
 		resMsg.IsResponse = true
 	}
 
@@ -253,7 +254,9 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	//log.Println("Received request of type", reqMsg.GetInternalID())
+	log.Println("Received request of type", reqMsg.GetInternalID())
+
+	var responseType = GENERIC_RES
 
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -273,7 +276,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// TODO: handle DATA_TRANSFER_MSG case
 	if reqMsg.InternalID != EXTERNAL_REQ && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
-		fwdAddr, respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
+		fwdAddr, respond, payload, responseType, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
 			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 			return
@@ -281,7 +284,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		if fwdAddr != nil {
 			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
 		} else if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, responseType, true)
 		}
 		return
 	}
@@ -294,7 +297,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQ)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, responseType, reqMsg.InternalID != EXTERNAL_REQ)
 	} else {
 		// Forward request if key doesn't correspond to this node:
 		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
@@ -310,7 +313,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param handler The message handler callback.
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
-	// log.Println("Received response of type", resMsg.GetInternalID())
+
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
@@ -360,7 +363,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
-	//log.Println("SEND UDP REQUEST")
+	log.Println("SEND UDP REQUEST with ID ", internalID)
 
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
