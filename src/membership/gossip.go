@@ -1,6 +1,7 @@
 package membership
 
 import (
+	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"log"
 	"net"
 
@@ -16,6 +17,9 @@ import (
 func tickHeartbeat() {
 	memberStore_.lock.Lock()
 	memberStore_.members[memberStore_.position].Heartbeat++
+	if memberStore_.members[memberStore_.position].Heartbeat%5 == 0 {
+		kvstore.PrintKVStoreSize()
+	}
 	memberStore_.lock.Unlock()
 }
 

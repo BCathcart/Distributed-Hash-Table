@@ -20,7 +20,7 @@ const STATUS_NORMAL = 0x1
 const STATUS_BOOTSTRAPPING = 0x2
 const STATUS_UNAVAILABLE = 0x3
 
-const HEARTBEAT_INTERVAL = 1000 // ms
+const HEARTBEAT_INTERVAL = 10000 // ms
 
 // Maps msg ID to serialized response
 var memberStore_ *MemberStore

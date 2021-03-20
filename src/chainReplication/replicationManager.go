@@ -123,7 +123,7 @@ func getHeadKeys() keyRange {
 func resendPendingTransfers() {
 	for _, transfer := range pendingTransfers {
 		payload := util.SerializeAddr(transfer.coordinator)
-		log.Println("\nSENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
+		// log.Println("\nSENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
 		requestreply.SendTransferReq(payload, transfer.receiver)
 	}
 }
@@ -401,14 +401,14 @@ func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys keyRange) 
 	pendingTransfers = append(pendingTransfers, &transferInfo{succAddr, coorAddr, keys})
 
 	payload := util.SerializeAddr(coorAddr)
-	log.Println("\nSENDING TRANSFER REQUEST FOR", (*coorAddr).String())
+	//log.Println("\nSENDING TRANSFER REQUEST FOR", (*coorAddr).String())
 	requestreply.SendTransferReq(payload, succAddr)
 }
 
 // TRANSFER_REQ internal msg type
 func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("\nRECEIVING TRANSFER REQUEST FOR ", (*addr).String())
+	//log.Println("\nRECEIVING TRANSFER REQUEST FOR ", (*addr).String())
 
 	// ACK if the address in in expectedTransfers
 	// i.e. we are expecting the transfer
@@ -433,8 +433,8 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 		log.Println("ERROR: HandleTransferReq - ", err)
 	} else {
 		log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.CreateAddressStringFromAddr(addr))
-		log.Println("Expecting ", expectedTransfers)
-		log.Println("Predecessors: ", predecessors)
+		//log.Println("Expecting ", expectedTransfers)
+		//log.Println("Predecessors: ", predecessors)
 	}
 
 	return nil, false

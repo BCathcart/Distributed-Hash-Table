@@ -58,7 +58,7 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	case requestreply.PING_MSG:
 		// Send nil payload back
-		log.Println("Got PINGed")
+		//log.Println("Got PINGed")
 
 	case requestreply.FORWARDED_CHAIN_UPDATE_REQ:
 		fwdAddr, payload, err = chainReplication.HandleForwardedChainUpdate(msg)
