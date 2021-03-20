@@ -16,9 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// TODO(Brennan): should add callback to reqreply layer so that
-// transfer PUT msgs are handled here. When a transfer is done,
-// start accepting GET requests for those keys
+// TODO(Brennan): Only start accepting GET requests when a transfer is done
 
 /*
 	keyRange struct maintains all of the keys a predecessor/successor node is responsible for.
@@ -78,10 +76,10 @@ var successor *successorNode
 var myAddr *net.Addr
 var mykeys keyRange
 
-// TODO: consider adding a lock to cover these
 var pendingTransfers []*transferInfo
 var expectedTransfers []*net.Addr
 
+// TODO: add finer-grained locks for M3
 var coarseLock sync.RWMutex
 
 func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
@@ -158,6 +156,9 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
 			newPredecessors[i].keys.high = keys[i]
+			if predecessors[i] != nil {
+				newPredecessors[i].transferred = predecessors[i].transferred // Default to old transfer state
+			}
 			if i < 2 && addr[i+1] != nil {
 				newPredecessors[i].keys.low = keys[i+1] + 1
 			} else {
@@ -245,9 +246,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	PrintKeyChange(newPredecessors)
 
 	log.Println("\n\nNEW PREDECESSOR\n")
-	log.Println(pred1Equal)
-	log.Println(pred2Equal)
-	log.Println(pred3Equal)
 
 	// If we newly joined, expect to receive keys
 	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
@@ -263,10 +261,11 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	if pred1Equal && pred2Equal {
 		// New node has joined
 		if newPred3 != nil && newPred2 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
-			sweepCache(newPred3.keys.low, newPred3.keys.high)
+			go sweepCache(newPred3.keys.low, newPred3.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			if newPred1 != nil {
 				expectedTransfers = append(expectedTransfers, newPred2.addr)
+				newPred2.transferred = false
 			}
 		}
 	} else if pred1Equal {
@@ -283,11 +282,14 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			log.Println("\n\nNEW SECOND PREDECESSOR JOINED\n")
-			sweepCache(oldPred2.keys.low, oldPred2.keys.high)
+			go sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
 			log.Println("\n\n SECOND PREDECESSOR FAILED\n")
 			expectedTransfers = append(expectedTransfers, newPred2.addr)
-			transferKeys(successor.addr, oldPred1.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high}) // Transfer the new keys P2 got to the successor
+			newPred2.transferred = false
+			if oldPred2 != nil {
+				go transferKeys(successor.addr, oldPred1.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high}) // Transfer the new keys P2 got to the successor
+			}
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
@@ -300,23 +302,29 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if util.BetweenKeys(newPred1.keys.high, oldPred1.keys.high, mykeys.high) { // New node has joined
 			log.Println("\n\nNEW FIRST PREDECESSOR JOINED\n")
 
-			// TODO: bootstrap transfer?
 			if oldPred2 != nil {
-				sweepCache(oldPred2.keys.low, oldPred2.keys.high)
+				go sweepCache(oldPred2.keys.low, oldPred2.keys.high)
+				newPred3.transferred = false
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
 			log.Println("\n\n FIRST PREDECESSOR FAILED\n")
 
 			// GOT EXCEPTION HERE
 			expectedTransfers = append(expectedTransfers, newPred2.addr)
+			newPred2.transferred = false
 			if oldPred2 != nil {
-				transferKeys(successor.addr, oldPred2.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
+				go transferKeys(successor.addr, oldPred2.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
 			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
-			if oldPred2 != nil {
-				transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
-			}
+			// TODO(Brennan): this case might need some work (or we can just hope it doesn't happen)
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
+			newPred1.transferred = false
+			newPred2.transferred = false
+			newPred3.transferred = false
+			if oldPred2 != nil {
+				go transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
+			}
+
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
 			//  This should be very rare so may not need to be handled, as the churn is expected to be low.
@@ -401,15 +409,8 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		removePendingTransfersToAMember(successor.addr)
 
 		// Determine if new successor is between you and the old successor (i.e. a new node)
-		var isNewMember bool
-		if successor.keys.high < mykeys.high {
-			isNewMember = maxKey > mykeys.high || maxKey < successor.keys.high
-		} else {
-			isNewMember = maxKey < successor.keys.high && maxKey > mykeys.high
-		}
-
+		isNewMember := util.BetweenKeys(maxKey, mykeys.high, successor.keys.high)
 		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
-
 		if isNewMember {
 			// If the new successor joined, need to transfer your keys and first predecessor's keys
 
@@ -522,10 +523,17 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
-	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*addr).String())
+	coorAddr, _ := util.DeserializeAddr(msg.Payload)
+	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
 
-	removed := removeExpectedTransfer(addr)
+	removed := removeExpectedTransfer(coorAddr)
+
+	// Update predecessor state
+	for _, pred := range predecessors {
+		if pred != nil && util.CreateAddressStringFromAddr(pred.addr) == util.CreateAddressStringFromAddr(coorAddr) {
+			pred.transferred = true
+		}
+	}
 
 	if !removed {
 		addr, _ := util.DeserializeAddr(msg.Payload)
