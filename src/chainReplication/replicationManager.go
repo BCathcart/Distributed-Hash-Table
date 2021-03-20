@@ -449,13 +449,14 @@ func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 
 	// Check if the transfer is expected
 	for i, transfer := range pendingTransfers {
+		log.Println("Checking for pending transfers")
 		if string(util.SerializeAddr(transfer.coordinator)) == string(msg.Payload) &&
 			string(util.SerializeAddr(transfer.receiver)) == string(util.SerializeAddr(sender)) {
 
 			pendingTransfers = removeTransferInfoFromArr(pendingTransfers, i)
 
 			// Start the transfer
-			transferService.TransferKVStoreData(transfer.receiver, transfer.keys.low, transfer.keys.high, func() {
+			go transferService.TransferKVStoreData(transfer.receiver, transfer.keys.low, transfer.keys.high, func() {
 				log.Println("\n SENDING TRANSFER FINISHED FOR ", (*transfer.coordinator).String(), (*transfer.receiver).String())
 				requestreply.SendTransferFinished(util.SerializeAddr(transfer.coordinator), transfer.receiver)
 			})
@@ -481,6 +482,7 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 		if string(util.SerializeAddr(coorAddr)) == string(msg.Payload) {
 			expectedTransfers = util.RemoveAddrFromArr(expectedTransfers, i)
 			removed = true
+			return
 		}
 	}
 

@@ -27,7 +27,7 @@ const TRANSFER_REQ = 0x6
 const DATA_TRANSFER_MSG = 0x7
 const FORWARDED_CHAIN_UPDATE_REQ = 0x8
 const TRANSFER_RES = 0x9
-const GENERIC_RES = 0x10
+const GENERIC_RES = 0xA
 
 // Only receive transfer request during bootstrapping
 
@@ -254,7 +254,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	//log.Println("Received request of type", reqMsg.GetInternalID())
+	log.Println("Received request of type", reqMsg.GetInternalID())
 
 	var responseType = GENERIC_RES
 
@@ -313,10 +313,13 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param handler The message handler callback.
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
-	// log.Println("Received response of type", resMsg.GetInternalID())
+	log.Println("Received response of type", resMsg.GetInternalID())
+
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
+	log.Println("LOCKING REQ CACHE")
 	reqCache_.lock.Lock()
+	log.Println("REQ CACHE LOCKED")
 	req := reqCache_.data.Get(string(resMsg.MessageID))
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
@@ -334,7 +337,11 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
 		}
 
+		log.Println("Calling getInternalResHandler()")
+
 		getInternalResHandler()(senderAddr, resMsg)
+
+		log.Println("Returning from getInternalResHandler()")
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
 		// (not needed, just use FORWARDED_EXTERNAL_REQ)
@@ -363,7 +370,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
-	//log.Println("SEND UDP REQUEST")
+	log.Println("SEND UDP REQUEST with ID ", internalID)
 
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
