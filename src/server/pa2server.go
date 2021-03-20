@@ -26,12 +26,12 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	defer connection.Close()
 
 	// find local IP address
-	ip := getOutboundIP()
+	ip := util.GetOutboundIP()
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
 	// init the request/reply protocol layer
-	requestreply.Init(&connection, membership.ExternalMsgHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
+	requestreply.RequestReplyLayerInit(&connection, membership.ExternalReqHandler, membership.InternalReqHandler, membership.MemberUnavailableHandler, membership.InternalResHandler)
 
 	// init the membership service layer
 	membership.Init(&connection, otherMembers, ip.String(), int32(port))
@@ -41,22 +41,6 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 
 	// Should never get here if everything is working
 	return err
-}
-
-// Source: Sathish's campuswire post #310
-/**
-* Returns local IP address
- */
-func getOutboundIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP
 }
 
 func main() {

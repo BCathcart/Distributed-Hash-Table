@@ -17,15 +17,16 @@ import (
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
-const EXTERNAL_REQUEST = 0x0
-const MEMBERSHIP_REQUEST = 0x1
-const HEARTBEAT = 0x2
-const TRANSFER_FINISHED = 0x3
+const EXTERNAL_REQ = 0x0
+const MEMBERSHIP_REQ = 0x1
+const HEARTBEAT_MSG = 0x2
+const TRANSFER_FINISHED_MSG = 0x3
 const FORWARDED_CLIENT_REQ = 0x4
-const PING = 0x5
+const PING_MSG = 0x5
 const TRANSFER_REQ = 0x6
-const DATA_TRANSFER = 0x7
-const FORWARDED_CHAIN_UPDATE = 0x8
+const DATA_TRANSFER_MSG = 0x7
+const FORWARDED_CHAIN_UPDATE_REQ = 0x8
+const TRANSFER_RES = 0x9
 
 // Only receive transfer request during bootstrapping
 
@@ -37,15 +38,17 @@ const MAX_BUFFER_SIZE = 11000
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
  */
-func Init(connection *net.PacketConn,
+func RequestReplyLayerInit(connection *net.PacketConn,
 	externalReqHandler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error),
 	internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error),
-	nodeUnavailableHandler func(addr *net.Addr)) {
+	nodeUnavailableHandler func(addr *net.Addr),
+	internalResHandler func(addr net.Addr, msg *pb.InternalMsg)) {
 
 	/* Store handlers */
 	setExternalReqHandler(externalReqHandler)
 	setInternalReqHandler(internalReqHandler)
 	setNodeUnavailableHandler(nodeUnavailableHandler)
+	setInternalResHandler(internalResHandler)
 
 	/* Set up response cache */
 	resCache_ = NewCache()
@@ -217,13 +220,13 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
-	if reqMsg.InternalID == EXTERNAL_REQUEST {
+	if reqMsg.InternalID == EXTERNAL_REQ {
 		reqMsg.InternalID = FORWARDED_CLIENT_REQ
 		isFirstHop = true
 	}
 
 	if isForwardedChainUpdate {
-		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE
+		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE_REQ
 	}
 
 	serMsg, err := proto.Marshal(reqMsg)
@@ -250,7 +253,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	log.Println("Received request of type", reqMsg.GetInternalID())
+	//log.Println("Received request of type", reqMsg.GetInternalID())
 
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -267,8 +270,8 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	resCache_.lock.Unlock()
 
 	// Determine if an internal or external message
-	// TODO: handle DATA_TRANSFER case
-	if reqMsg.InternalID != EXTERNAL_REQUEST && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
+	// TODO: handle DATA_TRANSFER_MSG case
+	if reqMsg.InternalID != EXTERNAL_REQ && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
 		fwdAddr, respond, payload, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
@@ -291,7 +294,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	if fwdAddr == nil {
 		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQUEST)
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, reqMsg.InternalID != EXTERNAL_REQ)
 	} else {
 		// Forward request if key doesn't correspond to this node:
 		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
@@ -306,7 +309,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param serialMsg The incoming message.
 * @param handler The message handler callback.
  */
-func processResponse(resMsg *pb.InternalMsg) {
+func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 	// log.Println("Received response of type", resMsg.GetInternalID())
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
@@ -328,12 +331,14 @@ func processResponse(resMsg *pb.InternalMsg) {
 			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
 		}
 
+		getInternalResHandler()(senderAddr, resMsg)
+
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
 		// (not needed, just use FORWARDED_EXTERNAL_REQ)
 
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
-		// TODO: Possible special handling for TRANSFER_FINISHED and MEMBERSHIP_REQUEST
+		// TODO: Possible special handling for TRANSFER_FINISHED_MSG and MEMBERSHIP_REQ
 		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
@@ -379,7 +384,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 
 	// Add to request cache
 	// don't cache membership requests because we don't expect a response
-	if internalID != MEMBERSHIP_REQUEST {
+	if internalID != MEMBERSHIP_REQ {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 
@@ -397,7 +402,7 @@ func MsgListener() error {
 
 	// Listen for packets
 	for {
-		n, returnAddr, err := (*conn).ReadFrom(buffer)
+		n, senderAddr, err := (*conn).ReadFrom(buffer)
 		if err != nil {
 			return err
 		}
@@ -407,20 +412,20 @@ func MsgListener() error {
 		err = proto.Unmarshal(buffer[0:n], msg)
 		if err != nil {
 			// Disregard messages with invalid format
-			log.Println("WARN msg with invalid format. Sender = " + returnAddr.String())
+			log.Println("WARN msg with invalid format. Sender = " + senderAddr.String())
 		}
 
 		// Verify checksum
 		if !verifyChecksum(msg) {
 			// Disregard messages with invalid checksums
-			log.Println("WARN checksum mismatch. Sender = " + returnAddr.String())
+			log.Println("WARN checksum mismatch. Sender = " + senderAddr.String())
 			continue
 		}
 
 		if msg.IsResponse {
-			go processResponse(msg)
+			go processResponse(senderAddr, msg)
 		} else {
-			go processRequest(returnAddr, msg)
+			go processRequest(senderAddr, msg)
 		}
 	}
 }

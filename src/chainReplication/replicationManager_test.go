@@ -48,13 +48,6 @@ func mostRecentSweeper() sweeperCall {
 	return sweeperCalls[len(sweeperCalls)-1]
 }
 
-func shallowCopy(orig *predecessorNode) *predecessorNode {
-	return &predecessorNode{
-		keys: orig.keys,
-		addr: orig.addr,
-	}
-}
-
 func newPredecessor(addr *net.Addr, low uint32, high uint32) *predecessorNode {
 	return &predecessorNode{
 		addr: addr,
@@ -147,10 +140,10 @@ func TestPredecessorsThirdFailed(t *testing.T) {
 	newPredecessors[1].keys.Low = newPred3KEy
 	newPredecessors[2].keys.High = newPred3KEy
 	newPredecessors[2].keys.Low = predecessors[2].keys.High
-	preFunctionLen := len(pendingRcvingTransfers)
+	preFunctionLen := len(expectedTransfers)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 	expected := preFunctionLen + 1
-	result := len(pendingRcvingTransfers)
+	result := len(expectedTransfers)
 	if expected != result {
 		t.Errorf("Expected pendingRcvTransfers to be %v long but got %v", expected, result)
 	}
@@ -199,9 +192,9 @@ func TestPredecessorsSecondFailed(t *testing.T) {
 	newPredecessors[2].keys.High = predecessors[2].keys.Low
 	newPredecessors[2].keys.Low = predecessors[2].keys.Low - 2
 
-	beforeLen := len(pendingRcvingTransfers)
+	beforeLen := len(expectedTransfers)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
-	if len(pendingRcvingTransfers) != beforeLen+1 {
+	if len(expectedTransfers) != beforeLen+1 {
 		t.Errorf("Error: did not append to receiving transfers")
 	}
 
@@ -263,9 +256,9 @@ func TestPredecessorsFirstFailed(t *testing.T) {
 	newPredecessors[2].keys.High = predecessors[2].keys.Low
 	newPredecessors[2].keys.Low = predecessors[2].keys.Low - 2
 
-	beforeLen := len(pendingRcvingTransfers)
+	beforeLen := len(expectedTransfers)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
-	if len(pendingRcvingTransfers) != beforeLen+1 {
+	if len(expectedTransfers) != beforeLen+1 {
 		t.Errorf("Error: did not append to receiving transfers")
 	}
 
