@@ -30,9 +30,9 @@ func mockTransfer(addr *net.Addr, lowKey uint32, highKey uint32) {
 	log.Printf("Called Transfer function with range [%v, %v], addr, %v \n", lowKey, highKey, (*addr).String())
 }
 
-func mockSweeper(lowKey uint32, highKey uint32) {
-	sweeperCalls = append(sweeperCalls, sweeperCall{lowKey: lowKey, highKey: highKey})
-	log.Printf("Called Sweeper function with range [%v, %v]\n", lowKey, highKey)
+func mockSweeper(keys util.KeyRange) {
+	sweeperCalls = append(sweeperCalls, sweeperCall{lowKey: keys.Low, highKey: keys.High})
+	log.Printf("Called Sweeper function with range [%v, %v]\n", keys.Low, keys.High)
 }
 
 func mostRecentTransfer() transferCall {
@@ -61,7 +61,7 @@ func setupPredecessors() [3]*predecessorNode {
 	mockAddr2, _ := util.GetAddr(MOCK_IP, 3)
 	mockAddr3, _ := util.GetAddr(MOCK_IP, 4)
 	mockSuccAddr, _ := util.GetAddr(MOCK_IP, 5)
-	mykeys = util.KeyRange{Low: 90, High: 99}
+	MyKeys = util.KeyRange{Low: 90, High: 99}
 	successor = &successorNode{keys: util.KeyRange{Low: 100, High: 109}, addr: mockSuccAddr}
 	predecessors[0] = newPredecessor(mockAddr1, 80, 89)
 	predecessors[1] = newPredecessor(mockAddr2, 70, 79)

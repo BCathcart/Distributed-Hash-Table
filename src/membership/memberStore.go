@@ -153,11 +153,18 @@ func (ms *MemberStore) getCountStatusNormal() int {
 	return count
 }
 
-func (ms *MemberStore) get(pos int) *pb.Member {
+func (ms *MemberStore) Get(pos int) *pb.Member {
 	ms.lock.RLock()
 	member := ms.members[pos]
 	ms.lock.RUnlock()
 	return member
+}
+
+func (ms *MemberStore) GetStatus() int32 {
+	ms.lock.RLock()
+	status := ms.members[memberStore_.position].Status
+	ms.lock.RUnlock()
+	return status
 }
 
 func removeidx(members []*pb.Member, posToRemove int, mypos int) ([]*pb.Member, int) {
@@ -198,7 +205,6 @@ func filterForStatusNormal(members []*pb.Member, mypos int) ([]*pb.Member, int) 
 		if members[i].Status == STATUS_NORMAL {
 			i++
 		} else {
-			log.Println("Removing ")
 			// Remove the element and return our new position in the slice
 			members, pos = removeidx(members, i, pos)
 		}

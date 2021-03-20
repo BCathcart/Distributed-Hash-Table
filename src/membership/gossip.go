@@ -64,7 +64,7 @@ func gossipHeartbeat(addr *net.Addr) {
 // TODO: (Not a big priority for M1) If we receive a heartbeat update from a predecessor
 // that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
 // - need to check version number before writing
-func heartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
+func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	log.Println("RECEIVED HEARTBEAT MSG")
 
 	payload := msg.GetPayload()

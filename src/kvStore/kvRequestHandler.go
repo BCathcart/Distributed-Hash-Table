@@ -111,6 +111,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 			errCode = INVALID_VAL
 		} else if memUsage() > MAX_MEM_USAGE {
 			kvRes = handleOverload()
+			log.Println("OVERLOADED FOR PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 			errCode = OVERLOAD
 		} else {
 			errCode = kvStore_.Put(key, value, version)
@@ -119,7 +120,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 		}
 
 		//DEBUGGING
-		log.Println("PUT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(value))
+		log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -138,7 +139,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 		}
 
 		//DEBUGGING
-		log.Println("GOT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(kvRes.Value))
+		log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
@@ -154,6 +155,8 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 
 	case WIPEOUT:
 		kvStore_.WipeoutKeys(requestOwner)
+		log.Println("WIPING OUT KEYS", requestOwner)
+		PrintKVStoreSize()
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
 
@@ -222,6 +225,10 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 	}
 
 	return nil
+}
+
+func Sweep(keys util.KeyRange) {
+	kvStore_.WipeoutKeys(keys)
 }
 
 /*

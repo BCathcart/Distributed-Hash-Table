@@ -1,7 +1,6 @@
 package chainReplication
 
 import (
-	"errors"
 	"log"
 	"net"
 
@@ -45,7 +44,7 @@ type transferInfo struct {
 }
 
 type transferFunc func(addr *net.Addr, lowKey uint32, highKey uint32)
-type sweeperFunc func(lowKey uint32, highKey uint32)
+type sweeperFunc func(keys util.KeyRange)
 
 func shallowCopy(orig *predecessorNode) *predecessorNode {
 	if orig == nil {
@@ -62,25 +61,35 @@ func dummyTransfer(addr *net.Addr, lowKey uint32, highKey uint32) {
 	log.Printf("Called Transfer function with range [%v, %v], addr, %v \n", lowKey, highKey, (*addr).String())
 }
 
-func dummySweeper(lowKey uint32, highKey uint32) {
-	log.Printf("Called Sweeper function with range [%v, %v]\n", lowKey, highKey)
+func dummySweeper(keys util.KeyRange) {
+	log.Println("Called Sweeper function with range", keys)
 }
+
+var sweepCache sweeperFunc = kvstore.Sweep
+var transferKeys transferFunc = dummyTransfer //TODO replace with actual transferfunc
 
 // 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
 var predecessors [3]*predecessorNode
 var successor *successorNode
 
-var myAddr *net.Addr
-var mykeys util.KeyRange
+var MyAddr *net.Addr
+var MyKeys util.KeyRange
 
 // TODO: consider adding a lock to cover these
 var pendingTransfers []*transferInfo
 var expectedTransfers []*net.Addr
 
+type request struct {
+	msg    *pb.InternalMsg
+	sender *net.Addr
+}
+
+var reqQueue chan request = nil
+
 func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
-	mykeys.Low = keylow
-	mykeys.High = keyhigh
-	myAddr = addr
+	MyKeys.Low = keylow
+	MyKeys.High = keyhigh
+	MyAddr = addr
 
 	// Periodically re-send transfer requests until the receiver is ready
 	var ticker = time.NewTicker(time.Millisecond * 1000)
@@ -90,6 +99,8 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 			resendPendingTransfers()
 		}
 	}()
+	reqQueue = make(chan request, 500)
+	go handleRequests(reqQueue)
 }
 
 // @return the keyrange for the HEAD of the current chain
@@ -98,7 +109,7 @@ func getHeadKeys() util.KeyRange {
 	if head == nil {
 		head = predecessors[0]
 	}
-	headkeys := mykeys
+	headkeys := MyKeys
 	if head != nil {
 		//DEBUGGING
 		// log.Println("the head is", (*head.addr).String())
@@ -126,14 +137,14 @@ func getPredAddr(predIdx int) *net.Addr {
 
 func getPredKey(predNode *predecessorNode) uint32 {
 	if predNode == nil {
-		return mykeys.High
+		return MyKeys.High
 	}
 	return predNode.keys.High
 }
 
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
-	mykeys.High = key
+	MyKeys.High = key
 	var newPredecessors [3]*predecessorNode
 	for i := 0; i < 3; i++ {
 		if addr[i] != nil {
@@ -150,11 +161,11 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			break
 		}
 	}
-	checkAddresses(addr, keys)
-	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
-	copyPredecessors(newPredecessors)                               // TODO: Not sure if I can do this, seems a bit hacky
+	// checkAddresses(addr, keys)
+	// checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
+	copyPredecessors(newPredecessors) // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
-		mykeys.Low = newPredecessors[0].keys.High + 1
+		MyKeys.Low = newPredecessors[0].keys.High + 1
 	}
 
 	// for i := 0; i < 2; i++ {
@@ -233,7 +244,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	if pred1Equal && pred2Equal {
 		// New node has joined
 		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.Low, oldPred2.keys.Low, oldPred2.keys.High)) {
-			sweepCache(newPred3.keys.Low, newPred3.keys.High)
+			sweepCache(newPred3.keys)
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
 		}
@@ -248,7 +259,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred2 == nil || newPred2 == nil {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
-			sweepCache(newPred2.keys.Low, newPred2.keys.High)
+			sweepCache(newPred2.keys)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			transferKeys(successor.addr, oldPred2.keys.Low, oldPred2.keys.High)
@@ -261,10 +272,10 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred1 == nil || newPred1 == nil {
 			return
 		}
-		if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, mykeys.High) { // New node has joined
+		if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, MyKeys.High) { // New node has joined
 			// TODO: bootstrap transfer?
 			if oldPred2 != nil {
-				sweepCache(oldPred2.keys.Low, oldPred2.keys.High)
+				sweepCache(oldPred2.keys)
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
@@ -332,25 +343,25 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 
 	// Ignore if information is the same
 	if util.CreateAddressStringFromAddr(successor.addr) != util.CreateAddressStringFromAddr(succAddr) {
-		isNewMember := maxKey < successor.keys.High
+		// isNewMember := maxKey < successor.keys.High
 		successor = &successorNode{succAddr, util.KeyRange{minKey, maxKey}}
-		if isNewMember {
-			// If the new successor joined, need to transfer your keys and first predecessor's keys
+		// if isNewMember {
+		// 	// If the new successor joined, need to transfer your keys and first predecessor's keys
 
-			// Transfer this server's keys to the new successor
-			sendDataTransferReq(succAddr, myAddr, mykeys)
+		// 	// Transfer this server's keys to the new successor
+		// 	sendDataTransferReq(succAddr, MyAddr, mykeys)
 
-			// Transfer predecessor's keys to the new successor
-			if predecessors[0].addr != nil {
-				sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
-			}
-		} else {
-			// If the new successor already existed (previous successor failed),
-			// only need to transfer the first predecessor's keys
-			if predecessors[0].addr != nil {
-				sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
-			}
-		}
+		// 	// Transfer predecessor's keys to the new successor
+		// 	if predecessors[0].addr != nil {
+		// 		sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+		// 	}
+		// } else {
+		// 	// If the new successor already existed (previous successor failed),
+		// 	// only need to transfer the first predecessor's keys
+		// 	if predecessors[0].addr != nil {
+		// 		sendDataTransferReq(succAddr, predecessors[0].addr, predecessors[0].keys)
+		// 	}
+		// }
 	}
 }
 
@@ -436,13 +447,13 @@ func HandleTransferFinishedReq(msg *pb.InternalMsg) {
 }
 
 // FORWARDED_CHAIN_UPDATE_REQ msg type
-func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) {
+func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, bool, error) {
 	log.Println("Received Forwarded Chain update")
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
 	if err != nil {
-		return nil, nil, err
+		return nil, false, nil, false, err
 	}
 	key := util.Hash(kvRequest.GetKey())
 
@@ -453,22 +464,27 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 	} else if predecessors[1].keys.IncludesKey(key) {
 		ownerKeys = predecessors[1].keys
 	} else {
-		log.Println("HandleForwardedChainUpdate: how did we get here?")
-		return nil, nil, errors.New("FORWARDED_CHAIN_UPDATE_REQ message received at wrong node")
+		log.Println("HandleForwardedChainUpdate: the request for key", key, "is not mine!", predecessors[0].keys, predecessors[1].keys)
+		return nil, false, nil, false, nil
 	}
 
 	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, ownerKeys) //TODO change membershipcount
 
-	if errcode != kvstore.OK || getHeadKeys().IncludesKey(key) {
-		// don't forward if this is the tail or if the request failed
+	if getHeadKeys().IncludesKey(key) {
+		// don't forward if this is the tail
 		log.Println("Replying to Forwarded Chain update")
+		return nil, true, payload, true, err
+	}
 
-		return nil, payload, err
+	if errcode != kvstore.OK {
+		// don't forward if the request failed
+		log.Println("Replying to Forwarded Chain update REQUEST FAILED")
+		return nil, false, payload, true, err
 	}
 	// otherwise forward the update to the successor
-	log.Println("Forwarding Chain update to", (*successor.addr).String())
+	log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
 
-	return successor.addr, nil, nil
+	return successor.addr, false, nil, true, nil
 }
 
 /**
@@ -477,22 +493,24 @@ func HandleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, []byte, error) 
 * @return True if the client request belongs to this node, false otherwise
 * @return the error in case of failure
  */
-func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, error) {
-	keyByte := kvRequest.Key
-	if keyByte == nil || !kvstore.IsKVRequest(kvRequest) {
-		// Any type of client request besides key-value requests gets handled here
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
-		return nil, payload, true, err
+func handleClientRequest(msg *pb.InternalMsg) (*net.Addr, []byte, bool, error) {
+	// Unmarshal KVRequest
+	kvRequest := &pb.KVRequest{}
+	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
+	if err != nil {
+		return nil, nil, false, err
 	}
-	key := util.Hash(keyByte)
+	key := util.Hash(kvRequest.GetKey())
 
 	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
-	if mykeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
-		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, mykeys) //TODO change membershipcount
+	if MyKeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, MyKeys) //TODO change membershipcount
 		if errcode != kvstore.OK || successor == nil {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
 		}
+		log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
+
 		return successor.addr, nil, true, err
 	}
 
@@ -507,4 +525,40 @@ func HandleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 func removeTransferInfoFromArr(s []*transferInfo, i int) []*transferInfo {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]
+}
+
+func AddRequest(addr *net.Addr, msg *pb.InternalMsg) {
+	log.Println("Adding request to queue", len(reqQueue))
+	reqQueue <- request{msg: msg, sender: addr}
+}
+
+func handleRequests(requests <-chan request) {
+	for req := range requests {
+		reqMsg := req.msg
+		var fwdAddr *net.Addr
+		var payload []byte
+		var isMine bool = false
+		var err error
+		var respondToClient bool
+		switch reqMsg.InternalID {
+		case requestreply.EXTERNAL_REQ, requestreply.FORWARDED_CLIENT_REQ:
+			fwdAddr, payload, isMine, err = handleClientRequest(reqMsg)
+			respondToClient = fwdAddr == nil
+
+		case requestreply.FORWARDED_CHAIN_UPDATE_REQ:
+			fwdAddr, respondToClient, payload, isMine, err = handleForwardedChainUpdate(reqMsg)
+		}
+		if err != nil {
+			log.Println("WARN: error in handleRequests", err)
+			break
+		}
+		if !isMine {
+			log.Println("WARN: The request is no longer mine")
+			go requestreply.ProcessExternalRequest(reqMsg, *req.sender) //this request is no longer our responsibility
+		} else {
+			requestreply.RespondToChainRequest(fwdAddr, req.sender, respondToClient, reqMsg, payload)
+		}
+
+	}
+	log.Println("Exiting request handler")
 }
