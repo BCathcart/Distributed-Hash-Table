@@ -18,11 +18,14 @@ import (
 /**
 * Passes external messages to the appropriate handler function
  */
-func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []byte, error) {
+func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []byte, int, error) {
+	log.Println("INTERNAL REQ: ", msg.InternalID)
+
 	var payload []byte = nil
 	var err error = nil
 	var fwdAddr *net.Addr = nil
-	respond := true
+	var respond = true
+	var responseType = requestreply.GENERIC_RES
 
 	switch msg.InternalID {
 	case requestreply.MEMBERSHIP_REQ:
@@ -40,11 +43,14 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 		if status == STATUS_BOOTSTRAPPING {
 			bootstrapTransferFinishedHandler(memberStore_)
 		} else {
-			chainReplication.HandleTransferFinishedReq(msg)
+			chainReplication.HandleTransferFinishedMsg(msg)
 		}
 
 	case requestreply.TRANSFER_REQ:
 		payload, respond = chainReplication.HandleTransferReq(msg)
+		if respond {
+			responseType = requestreply.TRANSFER_RES
+		}
 
 	case requestreply.DATA_TRANSFER_MSG:
 		err = transferService.HandleDataMsg(addr, msg)
@@ -61,10 +67,10 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	default:
 		log.Println("WARN: Invalid InternalID: " + strconv.Itoa(int(msg.InternalID)))
-		return nil, false, nil, errors.New("Invalid InternalID Error")
+		return nil, false, nil, responseType, errors.New("Invalid InternalID Error")
 	}
 
-	return fwdAddr, respond, payload, err
+	return fwdAddr, respond, payload, responseType, err
 }
 
 /**
