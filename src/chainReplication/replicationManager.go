@@ -48,7 +48,7 @@ type transferInfo struct {
 	keys        keyRange
 }
 
-type transferFunc func(addr *net.Addr, lowKey uint32, highKey uint32)
+type transferFunc func(destAddr *net.Addr, coordAddr *net.Addr, keys keyRange)
 type sweeperFunc func(lowKey uint32, highKey uint32)
 
 func shallowCopy(orig *predecessorNode) *predecessorNode {
@@ -163,8 +163,8 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 		}
 	}
 	// checkAddresses(addr, keys)
-	checkPredecessors(newPredecessors, dummyTransfer, dummySweeper) // TODO Replace with brennan /shay functions
-	copyPredecessors(newPredecessors)                               // TODO: Not sure if I can do this, seems a bit hacky
+	checkPredecessors(newPredecessors, sendDataTransferReq, dummySweeper) // TODO Replace with brennan /shay functions
+	copyPredecessors(newPredecessors)                                     // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
 		mykeys.low = newPredecessors[0].keys.high + 1
 	}
@@ -244,7 +244,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		expectedTransfers = append(expectedTransfers, newPred2.addr)
 		return
 	}
-
 	/*
 		First and second predecessors stay the same (third is different).
 		This could mean either the third predecessor has failed, or a new node has joined
@@ -252,10 +251,12 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	*/
 	if pred1Equal && pred2Equal {
 		// New node has joined
-		if newPred3 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
+		if newPred3 != nil && newPred2 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.low, oldPred2.keys.low, oldPred2.keys.high)) {
 			sweepCache(newPred3.keys.low, newPred3.keys.high)
 		} else { // P3 failed. Will be receiving P3 keys from P1
-			expectedTransfers = append(expectedTransfers, newPred1.addr)
+			if newPred1 != nil {
+				expectedTransfers = append(expectedTransfers, newPred1.addr)
+			}
 		}
 	} else if pred1Equal {
 		/*
@@ -272,8 +273,10 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
 			sweepCache(oldPred2.keys.low, oldPred2.keys.high)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
-			expectedTransfers = append(expectedTransfers, newPred1.addr)
-			transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+			if newPred1 != nil {
+				expectedTransfers = append(expectedTransfers, newPred1.addr)
+			}
+			transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
@@ -291,11 +294,11 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			if oldPred2 != nil {
-				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+				transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
 			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
 			if oldPred2 != nil {
-				transferKeys(successor.addr, oldPred2.keys.low, oldPred2.keys.high)
+				transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
 			}
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
@@ -356,14 +359,14 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)
 	// ASSUMPTION: first node won't receive keys before the second node is launched
 	if successor == nil {
-		log.Println("\n\n\nUPDATE SUCCESSOR FIRST TIME\n\n\n")
+		log.Print("\n\n\nUPDATE SUCCESSOR FIRST TIME\n\n\n")
 		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
 		return
 	}
 
 	// Ignore if information is the same
 	if util.CreateAddressStringFromAddr(successor.addr) != util.CreateAddressStringFromAddr(succAddr) {
-		log.Println("\n\n\nUPDATE SUCCESSOR\n\n\n")
+		log.Print("\n\n\nUPDATE SUCCESSOR\n\n\n")
 
 		// Clear pending transfers to the old successor
 		removePendingTransfersToAMember(successor.addr)
@@ -427,7 +430,7 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	// Check if the transfer is expected
 	for _, coorAddr := range expectedTransfers {
 		if util.CreateAddressStringFromAddr(coorAddr) == string(msg.Payload) {
-			log.Println("\nTRANSFER IS EXPECTED!\n")
+			log.Print("\nTRANSFER IS EXPECTED!\n")
 			return msg.Payload, true
 		}
 	}
