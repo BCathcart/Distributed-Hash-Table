@@ -35,6 +35,10 @@ const GET_MEMBERSHIP_COUNT = 0x08
 * @param port Server port number.
 * @return The unique ID as a 16 byte long byte array.
  */
+
+var portKeyMap = make(map[int]uint32)
+var prevRequests []*pb.KVRequest
+
 func getMsgId(clientIp string, port uint16) []byte {
 	ipArr := strings.Split(clientIp, ".")
 	ipBytes := make([]byte, 5)
@@ -284,14 +288,11 @@ func fillUp(conn *net.UDPConn, port int, callNum int) {
 
 	var payload *pb.KVRequest
 
-	for i := uint32(0); i < 1000; i++ {
-		// key := getMsgId("1.1.1.1", uint16(44221))
+	for i := uint32(0); i < 5; i++ {
 
 		key := []byte(strconv.Itoa(int(i)))
-
 		// val := make([]byte, 1000)
 		// binary.LittleEndian.PutUint32(val, i)
-
 		val := make([]byte, 1000)
 		rand.Read(val)
 
@@ -334,10 +335,23 @@ func fillUp(conn *net.UDPConn, port int, callNum int) {
 	}
 }
 
+func handleKVRequest(status bool, kVRes *pb.KVResponse) {
+	if kVRes.ErrCode != 0 {
+		fmt.Println("ERROR RESPONSE")
+		fmt.Println(kVRes.ErrCode)
+		return
+	}
+
+	if status == false {
+		fmt.Println("ERROR")
+		return
+	}
+}
+
 func fillUp2(conn *net.UDPConn, port int) {
 	var payload *pb.KVRequest
 
-	for i := uint32(0); i < 5; i++ {
+	for i := uint32(0); i < 2; i++ {
 		key := getMsgId("1.1.1.1", uint16(44221))
 		val := make([]byte, 4)
 		binary.LittleEndian.PutUint32(val, uint32(69+i))
@@ -383,6 +397,10 @@ func checkGet(conn *net.UDPConn, port int, key uint32) {
 }
 
 func main() {
+
+	replicationTest() // A bit hacky but easiest way to keep in separate file
+	return
+
 	fmt.Println("Client Started")
 	serverIPaddress := "192.168.1.74"
 	// serverIPaddress := "34.82.84.40"
@@ -419,13 +437,13 @@ func main() {
 
 	/* PUT */
 	// payload = putRequest(key, val, 1)
-	// status, kvRes := keyValueRequest(conn, port, payload)
+	// status, kvRes := keyValueRequest(conn, basePort, payload)
 
 	// fmt.Println(kvRes.ErrCode)
 
 	/* GET */
 	// payload = getRequest(key)
-	// status, kvRes = keyValueRequest(conn, port, payload)
+	// status, kvRes = keyValueRequest(conn, basePort, payload)
 
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println(kvRes.Value)
@@ -434,34 +452,34 @@ func main() {
 
 	// 	// /* DELETE */
 	// 	payload = removeRequest(key)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	// 	status, kvRes = keyValueRequest(conn, basePort, payload)
 
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println("DELETE FINISHED")
 
 	// 	// /* Other */
 	// 	payload = otherRequest(WIPEOUT)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	// 	status, kvRes = keyValueRequest(conn, basePort, payload)
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println("WIPEOUT FINISHED")
 
 	// 	payload = otherRequest(IS_ALIVE)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	// 	status, kvRes = keyValueRequest(conn, basePort, payload)
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println("IS_ALIVE")
 
 	// 	payload = otherRequest(GET_PID)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	// 	status, kvRes = keyValueRequest(conn, basePort, payload)
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println(kvRes.Pid)
 
 	// 	payload = otherRequest(GET_MEMBERSHIP_COUNT)
-	// 	status, kvRes = keyValueRequest(conn, port, payload)
+	// 	status, kvRes = keyValueRequest(conn, basePort, payload)
 	// 	fmt.Println(kvRes.ErrCode)
 	// 	fmt.Println(kvRes.MembershipCount)
 
 	// 	// payload = otherRequest(SHUTDOWN)
-	// 	// status, kvRes = keyValueRequest(conn, port, payload)
+	// 	// status, kvRes = keyValueRequest(conn, basePort, payload)
 	// 	// fmt.Println("SHUTDOWN")
 
 	// fmt.Println(status)
