@@ -159,7 +159,6 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
 			newPredecessors[i].keys.High = keys[i]
-			newPredecessors[i].keys.high = keys[i]
 			if predecessors[i] != nil {
 				newPredecessors[i].transferred = predecessors[i].transferred // Default to old transfer state
 			}
@@ -287,62 +286,59 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1
 			if newPred1 != nil {
 				expectedTransfers = append(expectedTransfers, newPred1.addr)
-			log.Println("\n\nNEW SECOND PREDECESSOR JOINED\n")
-			go sweepCache(oldPred2.keys.low, oldPred2.keys.high)
-		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
-			log.Println("\n\n SECOND PREDECESSOR FAILED\n\n")
-			expectedTransfers = append(expectedTransfers, newPred2.addr)
-			newPred2.transferred = false
-			if oldPred2 != nil && oldPred1 != nil {
-				log.Printf("TRANSFERRING KEYS TO SUCC %v", (*successor.addr).String())
-				go transferKeys(successor.addr, oldPred1.addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high}) // Transfer the new keys P2 got to the successor
-			}
-			transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
-		} else {
-			UnhandledScenarioError(newPredecessors)
-		}
-	} else { // First predecessor node has changed.
-		// If there's no first predecessor, there can only be one node in the system - not enough
-		// for a full chain, so nothing needs to be done in terms of replication.
-		if oldPred1 == nil || newPred1 == nil {
-			return
-		}
-		if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, MyKeys.High) { // New node has joined
-			// TODO: bootstrap transfer?
-			if oldPred2 != nil {
-				sweepCache(oldPred2.keys)
-			}
-		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
-			log.Println("\n\n FIRST PREDECESSOR FAILED\n")
-
-			// GOT EXCEPTION HERE
-			if newPred2 != nil {
+				log.Println("\n\nNEW SECOND PREDECESSOR JOINED\n")
+				go sweepCache(util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+			} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
+				log.Println("\n\n SECOND PREDECESSOR FAILED\n\n")
 				expectedTransfers = append(expectedTransfers, newPred2.addr)
 				newPred2.transferred = false
+				if oldPred2 != nil && oldPred1 != nil {
+					log.Printf("TRANSFERRING KEYS TO SUCC %v", (*successor.addr).String())
+					go transferKeys(successor.addr, oldPred1.addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High}) // Transfer the new keys P2 got to the successor
+				}
+			} else {
+				UnhandledScenarioError(newPredecessors)
 			}
-			if oldPred2 != nil {
-				go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+		} else { // First predecessor node has changed.
+			// If there's no first predecessor, there can only be one node in the system - not enough
+			// for a full chain, so nothing needs to be done in terms of replication.
+			if oldPred1 == nil || newPred1 == nil {
+				return
 			}
-		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
-			if oldPred2 != nil {
-				transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
-			}
-			expectedTransfers = append(expectedTransfers, newPred1.addr)
-			newPred1.transferred = false
-			newPred2.transferred = false
-			newPred3.transferred = false
-			if oldPred2 != nil {
-				go transferKeys(successor.addr, newPredecessors[0].addr, keyRange{low: oldPred2.keys.low, high: oldPred2.keys.high})
+			if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, MyKeys.High) { // New node has joined
+				// TODO: bootstrap transfer?
+				if oldPred2 != nil {
+					sweepCache(oldPred2.keys)
+				}
+			} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
+				log.Println("\n\n FIRST PREDECESSOR FAILED\n")
+
+				// GOT EXCEPTION HERE
+				if newPred2 != nil {
+					expectedTransfers = append(expectedTransfers, newPred2.addr)
+					newPred2.transferred = false
+				}
+				if oldPred2 != nil {
+					go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+				}
+			} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
+				if oldPred2 != nil {
+					go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+				}
+				expectedTransfers = append(expectedTransfers, newPred1.addr)
+				newPred1.transferred = false
+				newPred2.transferred = false
+				newPred3.transferred = false
+
+				// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
+				// 	our current architecture this is not possible since we do not yet have those keys.
+				//  This should be very rare so may not need to be handled, as the churn is expected to be low.
+				log.Println("TWO NODES FAILED SIMULTANEOUSLY.")
+			} else {
+				UnhandledScenarioError(newPredecessors)
 			}
 
-			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
-			// 	our current architecture this is not possible since we do not yet have those keys.
-			//  This should be very rare so may not need to be handled, as the churn is expected to be low.
-			log.Println("TWO NODES FAILED SIMULTANEOUSLY.")
-		} else {
-			UnhandledScenarioError(newPredecessors)
 		}
-
 	}
 }
 
@@ -419,16 +415,8 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		removePendingTransfersToAMember(successor.addr)
 
 		// Determine if new successor is between you and the old successor (i.e. a new node)
-		isNewMember := util.BetweenKeys(maxKey, mykeys.high, successor.keys.high)
-		successor = &successorNode{succAddr, keyRange{minKey, maxKey}}
-		var isNewMember bool
-		if successor.keys.High < MyKeys.High {
-			isNewMember = maxKey > MyKeys.High || maxKey < successor.keys.High
-		} else {
-			isNewMember = maxKey < successor.keys.High && maxKey > MyKeys.High
-		}
-
-		successor = &successorNode{succAddr, util.KeyRange{minKey, maxKey}}
+		isNewMember := util.BetweenKeys(maxKey, MyKeys.High, successor.keys.High)
+		successor = &successorNode{succAddr, util.KeyRange{Low: minKey, High: maxKey}}
 
 		if isNewMember {
 			// If the new successor joined, need to transfer your keys and first predecessor's keys
