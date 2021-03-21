@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 
+	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
 )
 
@@ -22,6 +23,7 @@ func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) b
 	}
 
 	go transferService.TransferKVStoreData(addr, minKey, maxKey, func() {
+		requestreply.SendTransferFinished(nil, addr)
 		memberStore_.lock.Lock()
 		memberStore_.transferNodeAddr = nil
 		memberStore_.lock.Unlock()

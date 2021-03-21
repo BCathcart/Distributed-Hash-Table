@@ -11,9 +11,9 @@ import (
 const MOCK_IP = "86.192.0.170"
 
 type transferCall struct {
-	addr    *net.Addr
-	lowKey  uint32
-	highKey uint32
+	addr      *net.Addr
+	coordAddr *net.Addr
+	keys      util.KeyRange
 }
 
 type sweeperCall struct {
@@ -25,9 +25,13 @@ type sweeperCall struct {
 var transferCalls []transferCall
 var sweeperCalls []sweeperCall
 
-func mockTransfer(addr *net.Addr, lowKey uint32, highKey uint32) {
-	transferCalls = append(transferCalls, transferCall{addr: addr, lowKey: lowKey, highKey: highKey})
-	log.Printf("Called Transfer function with range [%v, %v], addr, %v \n", lowKey, highKey, (*addr).String())
+func newKR(low uint32, high uint32) util.KeyRange {
+	return util.KeyRange{Low: low, High: high}
+}
+
+func mockTransfer(addr *net.Addr, coordAddr *net.Addr, keys util.KeyRange) {
+	transferCalls = append(transferCalls, transferCall{addr: addr, coordAddr: coordAddr, keys: keys})
+	log.Printf("Called Transfer function with range %v, addr, %v\n", keys, (*addr).String())
 }
 
 func mockSweeper(keys util.KeyRange) {
@@ -199,9 +203,9 @@ func TestPredecessorsSecondFailed(t *testing.T) {
 	}
 
 	expected := transferCall{
-		highKey: predecessors[1].keys.High,
-		lowKey:  predecessors[1].keys.Low,
-		addr:    successor.addr,
+		keys:      newKR(predecessors[1].keys.Low, predecessors[1].keys.High),
+		addr:      successor.addr,
+		coordAddr: newPredecessors[0].addr,
 	}
 
 	result := mostRecentTransfer()
@@ -263,9 +267,9 @@ func TestPredecessorsFirstFailed(t *testing.T) {
 	}
 
 	expected := transferCall{
-		highKey: predecessors[1].keys.High,
-		lowKey:  predecessors[1].keys.Low,
-		addr:    successor.addr,
+		keys:      newKR(predecessors[1].keys.Low, predecessors[1].keys.High),
+		addr:      successor.addr,
+		coordAddr: newPredecessors[0].addr,
 	}
 
 	result := mostRecentTransfer()
