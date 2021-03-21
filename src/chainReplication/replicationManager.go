@@ -33,9 +33,8 @@ type successorNode struct {
 }
 
 type predecessorNode struct {
-	addr        *net.Addr
-	keys        util.KeyRange
-	transferred bool
+	addr *net.Addr
+	keys util.KeyRange
 }
 
 type transferInfo struct {
@@ -159,9 +158,6 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			newPredecessors[i] = &predecessorNode{}
 			newPredecessors[i].addr = addr[i]
 			newPredecessors[i].keys.High = keys[i]
-			if predecessors[i] != nil {
-				newPredecessors[i].transferred = predecessors[i].transferred // Default to old transfer state
-			}
 			if i < 2 && addr[i+1] != nil {
 				newPredecessors[i].keys.Low = keys[i+1] + 1
 			} else {
@@ -274,7 +270,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else { // P3 failed. Will be receiving P3 keys from P1
 			if newPred1 != nil {
 				expectedTransfers = append(expectedTransfers, newPred2.addr)
-				newPred2.transferred = false
 			}
 		}
 	} else if pred1Equal {
@@ -300,7 +295,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
 			log.Println("\n\n SECOND PREDECESSOR FAILED\n\n")
 			expectedTransfers = append(expectedTransfers, newPred2.addr)
-			newPred2.transferred = false
 			if oldPred2 != nil && oldPred1 != nil {
 				log.Printf("TRANSFERRING KEYS TO SUCC %v", (*successor.addr).String())
 				go transferKeys(successor.addr, oldPred1.addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High}) // Transfer the new keys P2 got to the successor
@@ -330,7 +324,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			// GOT EXCEPTION HERE
 			if newPred2 != nil {
 				expectedTransfers = append(expectedTransfers, newPred2.addr)
-				newPred2.transferred = false
 			}
 			if oldPred2 != nil {
 				go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
@@ -340,9 +333,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 				go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
 			}
 			expectedTransfers = append(expectedTransfers, newPred1.addr)
-			newPred1.transferred = false
-			newPred2.transferred = false
-			newPred3.transferred = false
 
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
@@ -547,13 +537,6 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
 
 	removed := removeExpectedTransfer(coorAddr)
-
-	// Update predecessor state
-	for _, pred := range predecessors {
-		if pred != nil && util.CreateAddressStringFromAddr(pred.addr) == util.CreateAddressStringFromAddr(coorAddr) {
-			pred.transferred = true
-		}
-	}
 
 	if !removed {
 		addr, _ := util.DeserializeAddr(msg.Payload)
