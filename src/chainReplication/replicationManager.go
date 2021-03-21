@@ -99,7 +99,7 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 			resendPendingTransfers()
 		}
 	}()
-	reqQueue = make(chan request, 500)
+	reqQueue = make(chan request, 1000)
 	go handleRequests(reqQueue)
 }
 
