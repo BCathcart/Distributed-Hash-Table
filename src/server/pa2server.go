@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/CPEN-431-2021/dht-abcpen431/src/membership"
+	requesthandler "github.com/CPEN-431-2021/dht-abcpen431/src/requestHandler"
 	requestreply "github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
@@ -31,7 +32,7 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 
 	// Bootstrap node
 	// init the request/reply protocol layer
-	requestreply.RequestReplyLayerInit(&connection, membership.ExternalReqHandler, membership.InternalReqHandler, membership.MemberUnavailableHandler, membership.InternalResHandler)
+	requestreply.RequestReplyLayerInit(&connection, requesthandler.ExternalReqHandler, requesthandler.InternalReqHandler, membership.MemberUnavailableHandler, requesthandler.InternalResHandler)
 
 	// init the membership service layer
 	membership.Init(&connection, otherMembers, ip.String(), int32(port))

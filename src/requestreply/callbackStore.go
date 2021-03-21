@@ -11,16 +11,19 @@ import (
  * Getters and setters for internal (server-server) and external (client-server) request-response handlers
  */
 
-var externalReqHandler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error) = nil
-var internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error) = nil
+type externalReqHandlerFunc func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error)
+type internalReqHandlerFunc func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error)
+
+var externalReqHandler externalReqHandlerFunc = nil
+var internalReqHandler internalReqHandlerFunc = nil
 var nodeUnavailableHandler func(*net.Addr) = nil
 var internalResHandler func(net.Addr, *pb.InternalMsg) = nil
 
-func setExternalReqHandler(handler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error)) {
+func setExternalReqHandler(handler externalReqHandlerFunc) {
 	externalReqHandler = handler
 }
 
-func setInternalReqHandler(handler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error)) {
+func setInternalReqHandler(handler internalReqHandlerFunc) {
 	internalReqHandler = handler
 }
 
@@ -32,14 +35,14 @@ func setInternalResHandler(handler func(net.Addr, *pb.InternalMsg)) {
 	internalResHandler = handler
 }
 
-func getExternalReqHandler() func(*pb.InternalMsg) (*net.Addr, bool, []byte, error) {
+func getExternalReqHandler() externalReqHandlerFunc {
 	if externalReqHandler == nil {
 		log.Println("Error: External request handler has not been set")
 	}
 	return externalReqHandler
 }
 
-func getInternalReqHandler() func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error) {
+func getInternalReqHandler() internalReqHandlerFunc {
 	if internalReqHandler == nil {
 		log.Println("Error: Internal request handler has not been set")
 	}

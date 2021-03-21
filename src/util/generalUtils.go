@@ -101,3 +101,13 @@ func GetOutboundIP() net.IP {
 //	//log.Println(iMsg.CheckSum)
 //	//log.Println(iMsg.IsResponse)
 //}
+
+/**
+* Computes the IEEE CRC checksum based on the message ID and message payload.
+* @param msgID The message ID.
+* @param msgPayload The message payload.
+* @return The checksum.
+ */
+func ComputeChecksum(msgID []byte, msgPayload []byte) uint32 {
+	return crc32.ChecksumIEEE(append(msgID, msgPayload...))
+}

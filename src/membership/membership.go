@@ -38,6 +38,21 @@ func getKeyOfNodeTransferringTo() *uint32 {
 	}
 }
 
+func GetHeadTailAddr(key uint32) (*net.Addr, *net.Addr, error, error) {
+	memberStore_.lock.RLock()
+	// transferNdAddr := memberStore_.transferNodeAddr
+	transferRcvNdKey := getKeyOfNodeTransferringTo()
+
+	head, pos := searchForSuccessor(key, transferRcvNdKey) //TODO transferRcvNdKey?
+
+	tail, _ := searchForTail(pos)
+	memberStore_.lock.RUnlock()
+
+	headAddr, errHead := getMemberAddr(head)
+	tailAddr, errTail := getMemberAddr(tail)
+	return headAddr, tailAddr, errHead, errTail
+}
+
 /**
 Membership protocol (bootstrapping process). Sends a request to a random node,
 which will eventually get forwarded to our node's successor.
@@ -73,7 +88,7 @@ Otherwise, forward the membership request there to start the transfer
 @param addr the address that sent the message
 @param InternalMsg the internal message being sent
 */
-func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
+func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	// Send heartbeat to the node requesting
 	gossipHeartbeat(&addr)
 
@@ -96,7 +111,7 @@ func membershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 		}
 
 		// Transfer everything between the new predecessor's key and the previous predecessor's key
-		if transferToBootstrappingPred(memberStore_, transferAddr, predKey, targetKey) == false {
+		if transferToBootstrappingPred(transferAddr, predKey, targetKey) == false {
 			log.Println("WARN: Ignoring membership request b/c a transfer is already in progress")
 		}
 	} else {
