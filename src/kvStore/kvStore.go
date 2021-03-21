@@ -2,6 +2,7 @@ package kvstore
 
 import (
 	"container/list"
+	"log"
 	"strings"
 	"sync"
 
@@ -176,13 +177,15 @@ func (kvs *KVStore) getAllKeys() []string {
 
 func (kvs *KVStore) WipeoutKeys(keys util.KeyRange) {
 	kvs.lock.Lock()
-
-	for e := kvs.data.Front(); e != nil; e = e.Next() {
+	var next *list.Element = nil
+	for e := kvs.data.Front(); e != nil; e = next {
+		next = e.Next()
 		key := e.Value.(kventry).key
 		if keys.IncludesKey(util.Hash([]byte(key))) {
-			kvs.Remove(key)
+			kvStore_.size -= uint32(len(e.Value.(kventry).key) + len(e.Value.(kventry).val) + 4)
+			kvStore_.data.Remove(e)
 		}
 	}
-
 	kvs.lock.Unlock()
+	log.Println("LEN KV STORE = ", kvStore_.data.Len())
 }

@@ -232,10 +232,10 @@ func Sweep(keys util.KeyRange) {
 }
 
 /*
-* PrintKVStoreSize prints out the size of the kvstore
+* PrintKVStoreSize prints out number of elements of the kvstore
  */
 func PrintKVStoreSize() {
-	log.Println("SIZE: ", kvStore_.GetSize())
+	log.Print("\n\n\n =======SIZE:===============", kvStore_.data.Len(), "=========\n\n\n")
 }
 
 /**
