@@ -21,7 +21,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 
 	log.Println("TRANSFERRING KEYS TO MEMBER WITH ADDRESS: ", (*addr).String())
 	localKeyList := kvstore.GetKeyList()
-	log.Printf("KEY RANGE TO TRANSFER: %v %v", minKey, maxKey)
+
 	// TODO a map to hold the keys that need to be transferred and whether they've been successfully sent to predecessor
 	// var keysToTransfer map[int]bool will be added in next milestone
 
@@ -29,8 +29,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 	for _, key := range localKeyList {
 		hashVal := util.Hash([]byte(key))
 
-		var shouldTransfer = false
-		shouldTransfer = util.BetweenKeys(hashVal, minKey, maxKey)
+		var shouldTransfer = util.BetweenKeys(hashVal, minKey, maxKey)
 
 		if shouldTransfer {
 			// get the kv from local kvStore, serialized and ready to send
@@ -39,7 +38,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				log.Println("WARN: Could not get kv from local kvStore")
 				continue
 			}
-			log.Printf("TRANSFERRING KEY %v", key)
+
 			requestreply.SendDataTransferMessage(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
