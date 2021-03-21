@@ -575,6 +575,7 @@ func handleClientRequest(msg *pb.InternalMsg) (*net.Addr, []byte, bool, error) {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
 		}
+
 		log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
 
 		return successor.addr, nil, true, err
