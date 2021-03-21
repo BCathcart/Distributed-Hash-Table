@@ -158,6 +158,7 @@ func getPredKey(predNode *predecessorNode) uint32 {
 
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
+	log.Println(addr)
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
@@ -679,8 +680,12 @@ func removeTransferInfoFromArr(s []*transferInfo, i int) []*transferInfo {
 }
 
 func AddRequest(addr *net.Addr, msg *pb.InternalMsg) {
-	log.Println("Adding request to queue", len(reqQueue))
-	reqQueue <- request{msg: msg, sender: addr}
+	if len(reqQueue) < cap(reqQueue) {
+		log.Println("Adding request to queue", len(reqQueue))
+		reqQueue <- request{msg: msg, sender: addr}
+	} else {
+		log.Println("WARN: Request queue full --- Dropping request") //TODO reply to node in chain
+	}
 }
 
 func handleRequests(requests <-chan request) {
