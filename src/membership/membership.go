@@ -67,6 +67,11 @@ func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int3
 		// Send request to random node (from list of nodes)
 		randIdx := rand.Intn(len(otherMembers))
 		randAddr := otherMembers[randIdx]
+
+		// Send heartbeat to the node to get gossip started of our existence started
+		var addr net.Addr = randAddr
+		gossipHeartbeat(&addr)
+
 		localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
 		reqPayload := []byte(localAddrStr)
 		err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
@@ -100,6 +105,12 @@ func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	targetMember, targetMemberIdx := searchForSuccessor(targetKey, nil)
 
 	if targetMemberIdx == memberStore_.position {
+		// We don't want to continue if a transfer is already in progress
+		if memberStore_.transferNodeAddr != nil {
+			log.Println("WARN: Ignoring membership request b/c a transfer is already in progress")
+			return
+		}
+
 		predKey, _ := getPredecessor(targetKey)
 		// curKey := memberStore_.getCurrMember().Key
 		memberStore_.lock.RUnlock()
