@@ -396,7 +396,8 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	defer coarseLock.Unlock()
 
 	if succAddr == nil {
-		log.Println("ERROR: Successor address cannot be null")
+		successor = nil
+		log.Println("Warn: Setting address to nil")
 		return
 	}
 
