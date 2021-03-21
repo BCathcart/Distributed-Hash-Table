@@ -137,6 +137,8 @@ func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 // When a member is found to be unavailable, remove it from the member list
 func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
+	memberStore_.lock.Lock()
+	updateChain(&memberStore_.lock)
 	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
 }
 
