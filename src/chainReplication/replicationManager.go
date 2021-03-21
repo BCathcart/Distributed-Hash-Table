@@ -3,6 +3,7 @@ package chainReplication
 import (
 	"log"
 	"net"
+	"strings"
 	"sync"
 
 	"time"
@@ -107,18 +108,27 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 }
 
 // @return the keyrange for the HEAD of the current chain
-func getHeadKeys() util.KeyRange {
+func getHead() (*net.Addr, util.KeyRange) {
 	head := predecessors[1]
 	if head == nil {
 		head = predecessors[0]
 	}
-	headkeys := MyKeys
 	if head != nil {
 		//DEBUGGING
 		// log.Println("the head is", (*head.addr).String())
-		headkeys = head.keys
+		return head.addr, head.keys
 	}
-	return headkeys
+	return MyAddr, MyKeys
+}
+
+func expectingTransferFrom(addr *net.Addr) bool {
+	for _, a := range expectedTransfers {
+		if strings.Compare((*a).String(), (*addr).String()) == 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func resendPendingTransfers() {
@@ -567,9 +577,9 @@ func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, b
 	}
 
 	payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, ownerKeys) //TODO change membershipcount
-
-	if getHeadKeys().IncludesKey(key) {
-		// don't forward if this is the tail
+	_, headKeys := getHead()
+	if headKeys.IncludesKey(key) {
+		// Reply if this is the tail
 		log.Println("Replying to Forwarded Chain update")
 		return nil, true, payload, true, err
 	}
@@ -607,14 +617,15 @@ func handleClientRequest(msg *pb.InternalMsg) (*net.Addr, []byte, bool, error) {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
 		}
+
 		log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
 
 		return successor.addr, nil, true, err
 	}
-
+	headAddr, headKeys := getHead()
 	// GET responded to here if they correspond to the HEAD
-	if getHeadKeys().IncludesKey(key) && kvstore.IsGetRequest(kvRequest) {
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, getHeadKeys()) //TODO change membershipcount
+	if headKeys.IncludesKey(key) && kvstore.IsGetRequest(kvRequest) && !expectingTransferFrom(headAddr) {
+		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, headKeys) //TODO change membershipcount
 		return nil, payload, true, err
 	}
 	log.Println("handleClientRequest: the request for key", key, "is not mine!", predecessors[0].keys, predecessors[1].keys)

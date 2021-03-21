@@ -103,7 +103,7 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 	currAddr := *chainReplication.MyAddr
 	if !kvstore.IsKVRequest(kvRequest) {
 		// Any type of client request besides key-value requests gets handled here
-		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, util.KeyRange{}) //TODO change membershipcount
+		payload, err, _ := kvstore.RequestHandler(kvRequest, membership.GetMembershipCount(), util.KeyRange{})
 		return nil, true, payload, err
 	}
 	if kvRequest.Key == nil {
@@ -122,8 +122,16 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 	if err != nil {
 		return nil, false, nil, err
 	}
+	//the request belongs to this node
 	if strings.Compare((*fwdAddr).String(), currAddr.String()) == 0 {
 		chainReplication.AddRequest(&addr, msg)
+		if kvstore.IsUpdateRequest(kvRequest) {
+			transferNodeAddr := membership.GetTransferNodeAddr()
+			if transferNodeAddr != nil {
+				requestreply.SendDataTransferMessage(msg.GetPayload(), transferNodeAddr)
+			}
+		}
+
 		fwdAddr = nil
 	}
 	return fwdAddr, false, nil, err
