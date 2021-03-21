@@ -3,6 +3,7 @@ package membership
 import (
 	"log"
 	"net"
+	"time"
 
 	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
@@ -25,6 +26,22 @@ func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) b
 	go transferService.TransferKVStoreData(addr, minKey, maxKey, func() {
 		requestreply.SendTransferFinished(nil, addr)
 		memberStore_.lock.Lock()
+		// Set the node to STATUS_NORMAL here so that if transfer finished is not received
+		// it still learns it is done bootstrapping through gossip
+		// Need to wait util we have added the bootstrapping node to our memberstore through gossip
+		var pos int = -1
+		for true {
+			pos = GetPosFromAddr(addr)
+			log.Println(pos)
+			if pos != -1 {
+				break
+			} else {
+				memberStore_.lock.Unlock()
+				time.Sleep(1 * time.Second)
+				memberStore_.lock.Lock()
+			}
+		}
+		memberStore_.members[GetPosFromAddr(addr)].Status = STATUS_NORMAL
 		memberStore_.transferNodeAddr = nil
 		memberStore_.lock.Unlock()
 	})

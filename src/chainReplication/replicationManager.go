@@ -256,6 +256,13 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		expectedTransfers = append(expectedTransfers, newPred2.addr)
 		return
 	}
+
+	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
+		log.Println("\n\n EXPECTING TO RECEIVE KEYS FROM PREDECESSORS AFTER BOOTSTRAP\n")
+		expectedTransfers = append(expectedTransfers, newPred1.addr)
+		expectedTransfers = append(expectedTransfers, newPred2.addr)
+		return
+	}
 	/*
 		First and second predecessors stay the same (third is different).
 		This could mean either the third predecessor has failed, or a new node has joined

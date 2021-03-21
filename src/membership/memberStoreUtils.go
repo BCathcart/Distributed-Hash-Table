@@ -191,3 +191,12 @@ func GetTransferNodeAddr() *net.Addr {
 	memberStore_.lock.RUnlock()
 	return transferNodeAddr
 }
+
+func GetPosFromAddr(addr *net.Addr) int {
+	for i, member := range memberStore_.members {
+		if util.CreateAddressString(string(member.Ip), int(member.Port)) == util.CreateAddressStringFromAddr(addr) {
+			return i
+		}
+	}
+	return -1
+}
