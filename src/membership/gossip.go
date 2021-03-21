@@ -1,9 +1,11 @@
 package membership
 
 import (
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"log"
 	"net"
+	"sync"
+
+	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
@@ -110,6 +112,14 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
 	}
+	updateChain(&memberStore_.lock)
+
+	log.Println(memberStore_.members)
+
+}
+
+//call with memberstore lock held
+func updateChain(lock *sync.RWMutex) {
 	// get the last 3 predecessors
 	preds := searchForPredecessors(memberStore_.position, 3)
 	addresses, keys := getPredAddresses(preds)
@@ -124,7 +134,4 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 		chainReplication.UpdateSuccessor(nil, 0, 0)
 	}
 	chainReplication.UpdatePredecessors(addresses, keys, memberStore_.mykey)
-
-	log.Println(memberStore_.members)
-
 }
