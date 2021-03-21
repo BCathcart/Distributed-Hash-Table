@@ -61,9 +61,9 @@ func sweepReqCache() {
 	reqCache_.lock.Unlock()
 
 	// Send error responses
-	for _, errResponse := range errResponseAddrs {
-		sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, 0, errResponse.isFirstHop == false)
-	}
+	// for _, errResponse := range errResponseAddrs {
+	// 	sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, 0, errResponse.isFirstHop == false)
+	// }
 
 	// Send ping requests
 	for _, addr := range membersToPing {

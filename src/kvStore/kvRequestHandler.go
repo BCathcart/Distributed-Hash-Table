@@ -84,7 +84,7 @@ func handleOverload() *pb.KVResponse {
 * @return Error object if there was an error, nil otherwise.
 * @return the errorcode
  */
-func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error, uint32) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner util.KeyRange) ([]byte, error, uint32) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -111,6 +111,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = INVALID_VAL
 		} else if memUsage() > MAX_MEM_USAGE {
 			kvRes = handleOverload()
+			log.Println("OVERLOADED FOR PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 			errCode = OVERLOAD
 		} else {
 			errCode = kvStore_.Put(key, value, version)
@@ -119,7 +120,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		}
 
 		//DEBUGGING
-		log.Println("PUT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(value))
+		log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -138,7 +139,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		}
 
 		//DEBUGGING
-		log.Println("GOT---", "KEY", kvRequest.GetKey(), "VALUE:", BytetoInt(kvRes.Value))
+		log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
@@ -153,7 +154,9 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 		os.Exit(1)
 
 	case WIPEOUT:
-		kvStore_.Wipeout()
+		kvStore_.WipeoutKeys(requestOwner)
+		log.Println("WIPING OUT KEYS", requestOwner)
+		PrintKVStoreSize()
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
 
@@ -222,6 +225,10 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 	}
 
 	return nil
+}
+
+func Sweep(keys util.KeyRange) {
+	kvStore_.WipeoutKeys(keys)
 }
 
 /*

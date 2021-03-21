@@ -11,22 +11,22 @@ import (
 /*
 * Transfers all keys to the bootstrapping node
  */
-func transferToBootstrappingPred(memberStore *MemberStore, addr *net.Addr, minKey uint32, maxKey uint32) bool {
-	memberStore.lock.Lock()
-	defer memberStore.lock.Unlock()
+func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) bool {
+	memberStore_.lock.Lock()
+	defer memberStore_.lock.Unlock()
 
-	if memberStore.transferNodeAddr != nil {
+	if memberStore_.transferNodeAddr != nil {
 		log.Println("WARN: A transfer is already in progress")
 		return false
 	} else {
-		memberStore.transferNodeAddr = addr
+		memberStore_.transferNodeAddr = addr
 	}
 
 	go transferService.TransferKVStoreData(addr, minKey, maxKey, func() {
 		requestreply.SendTransferFinished(nil, addr)
-		memberStore.lock.Lock()
-		memberStore.transferNodeAddr = nil
-		memberStore.lock.Unlock()
+		memberStore_.lock.Lock()
+		memberStore_.transferNodeAddr = nil
+		memberStore_.lock.Unlock()
 	})
 
 	return true
@@ -36,10 +36,10 @@ func transferToBootstrappingPred(memberStore *MemberStore, addr *net.Addr, minKe
 Membership protocol: after receiving the transfer finished from the successor node,
 sets status to normal
 */
-func bootstrapTransferFinishedHandler(memberStore *MemberStore) {
+func BootstrapTransferFinishedHandler() {
 	log.Println("RECEIVED TRANSFER FINISHED MSG")
 
-	memberStore.lock.Lock()
-	memberStore.members[memberStore.position].Status = STATUS_NORMAL
-	memberStore.lock.Unlock()
+	memberStore_.lock.Lock()
+	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
+	memberStore_.lock.Unlock()
 }

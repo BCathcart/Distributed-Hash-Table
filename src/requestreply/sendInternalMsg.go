@@ -41,12 +41,13 @@ func SendPingRequest(ip string, port int) error {
 
 //SendHeartbeatMessage - gossip heartbeat
 func SendHeartbeatMessage(payload []byte, ip string, port int) error {
-	log.Println("SendHeartbeatMessage")
 	addr, err := util.GetAddr(ip, port)
 	if err != nil {
 		log.Println("WARN Could not resolve member UDP addr")
 		return err
 	}
+	log.Println("SendHeartbeatMessage to", (*addr).String())
+
 	sendUDPRequest(addr, payload, HEARTBEAT_MSG)
 	return nil
 }

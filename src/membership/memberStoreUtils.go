@@ -43,6 +43,7 @@ func searchForSuccessor(targetKey uint32, exceptionKey *uint32) (*pb.Member, int
 * If the number of STATUS_NORMAL members is less than the default length
 * of the chain (3), searchForTail returns the sucessor (if membership count is 2)
 * or the head itself (if membership count is 1)
+* Assume the head is STATUS_NORMAL
  */
 func searchForTail(head int) (*pb.Member, int) {
 	chain := make([]int, 3)
@@ -178,4 +179,15 @@ func GetMembershipCount() int {
 
 func getMemberAddr(member *pb.Member) (*net.Addr, error) {
 	return util.GetAddr(string(member.GetIp()), int(member.GetPort()))
+}
+
+func IsBootstrapping() bool {
+	return memberStore_.GetStatus() == STATUS_BOOTSTRAPPING
+}
+
+func GetTransferNodeAddr() *net.Addr {
+	memberStore_.lock.RLock()
+	transferNodeAddr := memberStore_.transferNodeAddr
+	memberStore_.lock.RUnlock()
+	return transferNodeAddr
 }

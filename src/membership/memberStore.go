@@ -153,11 +153,18 @@ func (ms *MemberStore) getCountStatusNormal() int {
 	return count
 }
 
-func (ms *MemberStore) get(pos int) *pb.Member {
+func (ms *MemberStore) Get(pos int) *pb.Member {
 	ms.lock.RLock()
 	member := ms.members[pos]
 	ms.lock.RUnlock()
 	return member
+}
+
+func (ms *MemberStore) GetStatus() int32 {
+	ms.lock.RLock()
+	status := ms.members[memberStore_.position].Status
+	ms.lock.RUnlock()
+	return status
 }
 
 func removeidx(members []*pb.Member, posToRemove int, mypos int) ([]*pb.Member, int) {

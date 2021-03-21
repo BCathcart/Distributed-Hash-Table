@@ -2,7 +2,6 @@ package requestreply
 
 import (
 	"encoding/binary"
-	"hash/crc32"
 	"log"
 	"math/rand"
 	"net"
@@ -11,6 +10,8 @@ import (
 	"time"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -40,8 +41,8 @@ const MAX_BUFFER_SIZE = 11000
 * request/reply layer to get expected functionality.
  */
 func RequestReplyLayerInit(connection *net.PacketConn,
-	externalReqHandler func(*pb.InternalMsg) (*net.Addr, bool, []byte, error),
-	internalReqHandler func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error),
+	externalReqHandler externalReqHandlerFunc,
+	internalReqHandler internalReqHandlerFunc,
 	nodeUnavailableHandler func(addr *net.Addr),
 	internalResHandler func(addr net.Addr, msg *pb.InternalMsg)) {
 
@@ -108,22 +109,12 @@ func getmsgID(clientIP string, port uint16) []byte {
 
 /**
 * Computes the IEEE CRC checksum based on the message ID and message payload.
-* @param msgID The message ID.
-* @param msgPayload The message payload.
-* @return The checksum.
- */
-func computeChecksum(msgID []byte, msgPayload []byte) uint32 {
-	return crc32.ChecksumIEEE(append(msgID, msgPayload...))
-}
-
-/**
-* Computes the IEEE CRC checksum based on the message ID and message payload.
 * @param msg The received message.
 * @return True if message ID matches the expected ID and checksum is valid, false otherwise.
  */
 func verifyChecksum(msg *pb.InternalMsg) bool {
 	// Verify MessageID is as expected
-	if uint64(computeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
+	if uint64(util.ComputeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
 		return false
 	}
 	return true
@@ -151,8 +142,8 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param msgID The message id.
 * @param payload The message payload.
  */
-func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id int, isInternal bool) {
-	checksum := computeChecksum(msgID, payload)
+func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
+	checksum := util.ComputeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
 		MessageID: msgID,
@@ -256,8 +247,6 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	log.Println("Received request of type", reqMsg.GetInternalID())
 
-	var responseType = GENERIC_RES
-
 	// Check if response is already cached
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
@@ -284,25 +273,55 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		if fwdAddr != nil {
 			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
 		} else if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, responseType, true)
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, uint32(responseType), true)
 		}
 		return
 	}
+	if reqMsg.GetAddr() == nil {
+		reqMsg.Addr = util.CreateAddressStringFromAddr(&returnAddr)
+	}
+	ProcessExternalRequest(reqMsg, returnAddr)
 
-	fwdAddr, isForwardedChainUpdate, payload, err := getExternalReqHandler()(reqMsg)
+}
+
+func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
+	returnAddr := reqMsg.GetAddr()
+	fwdAddr, respondToClient, payload, err := getExternalReqHandler()(messageSender, reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
 	}
-
-	if fwdAddr == nil {
-		// Send response
-		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, responseType, reqMsg.InternalID != EXTERNAL_REQ)
-	} else {
-		// Forward request if key doesn't correspond to this node:
-		forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, isForwardedChainUpdate)
+	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
+		// acknowledge forwarded client request
+		log.Println("Acknowledging forwarded client request to server", messageSender.String())
+		sendUDPResponse(messageSender, reqMsg.MessageID, nil, reqMsg.InternalID, true)
 	}
+	if respondToClient {
+		// Send response to client
+		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, false)
+	} else if fwdAddr != nil {
+		// Forward request if key doesn't correspond to this node:
+		// log.Println("Forwarding client request to", (*fwdAddr).String())
+		forwardUDPRequest(fwdAddr, nil, reqMsg, false)
+	}
+}
 
+func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, respondToClient bool, reqMsg *pb.InternalMsg, payload []byte) {
+	isForwardedChainUpdate := reqMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ
+	if respondToClient {
+		/************DEBUGGING****************/
+		res := &pb.KVResponse{}
+		proto.Unmarshal(payload, res)
+		log.Println("Sending response to client", reqMsg.GetAddr().String(), "for value", kvstore.BytetoInt(res.GetValue()))
+		/**************************************/
+		sendUDPResponse(reqMsg.GetAddr(), reqMsg.MessageID, payload, reqMsg.InternalID, false)
+	}
+	if isForwardedChainUpdate {
+		sendUDPResponse(*respondAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
+	}
+	if fwdAddr != nil {
+		forwardUDPRequest(fwdAddr, nil, reqMsg, true)
+	}
 }
 
 /**
@@ -345,12 +364,12 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		reqCache_.data.Delete(string(resMsg.MessageID))
 
 	} else {
-		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)
-		/************DEBUGGING****************
+		//log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)
+		/************DEBUGGING****************/
 		res := &pb.KVResponse{}
 		proto.Unmarshal(resMsg.Payload, res)
-		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID, "for value", kvstore.BytetoInt(res.GetValue()))
-		***************************************/
+		log.Println("WARN: Received response for unknown request", resMsg.MessageID, "of type", resMsg.InternalID, "for value", kvstore.BytetoInt(res.GetValue()))
+		/***************************************/
 	}
 	reqCache_.lock.Unlock()
 }
@@ -370,7 +389,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 
 	msgID := getmsgID(ip, uint16(port))
 
-	checksum := computeChecksum(msgID, payload)
+	checksum := util.ComputeChecksum(msgID, payload)
 
 	reqMsg := &pb.InternalMsg{
 		MessageID:  msgID,
