@@ -254,7 +254,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	//log.Println("Received request of type", reqMsg.GetInternalID())
+	log.Println("Received request of type", reqMsg.GetInternalID())
 
 	var responseType = GENERIC_RES
 
