@@ -29,13 +29,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 	for _, key := range localKeyList {
 		hashVal := util.Hash([]byte(key))
 
-		var shouldTransfer = false
-		// TODO: verify if this wrap around works
-		if minKey > maxKey { // wrap around
-			shouldTransfer = hashVal >= minKey || maxKey >= hashVal
-		} else {
-			shouldTransfer = hashVal <= minKey
-		}
+		var shouldTransfer = util.BetweenKeys(hashVal, minKey, maxKey)
 
 		if shouldTransfer {
 			// get the kv from local kvStore, serialized and ready to send
@@ -50,10 +44,10 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
 			doesn't wait for response to delete from local kvStore
 			*/
-			wasRemoved := kvstore.RemoveKey(key)
-			if wasRemoved == kvstore.NOT_FOUND {
-				log.Println("key", key, "was not found in local kvStore")
-			}
+			// wasRemoved := kvstore.RemoveKey(key)
+			// if wasRemoved == kvstore.NOT_FOUND {
+			// 	log.Println("key", key, "was not found in local kvStore")
+			// }
 
 		}
 	}
