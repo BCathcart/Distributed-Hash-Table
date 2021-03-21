@@ -198,7 +198,6 @@ func filterForStatusNormal(members []*pb.Member, mypos int) ([]*pb.Member, int) 
 		if members[i].Status == STATUS_NORMAL {
 			i++
 		} else {
-			log.Println("Removing ")
 			// Remove the element and return our new position in the slice
 			members, pos = removeidx(members, i, pos)
 		}

@@ -313,13 +313,10 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 * @param handler The message handler callback.
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
-	log.Println("Received response of type", resMsg.GetInternalID())
 
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
-	log.Println("LOCKING REQ CACHE")
 	reqCache_.lock.Lock()
-	log.Println("REQ CACHE LOCKED")
 	req := reqCache_.data.Get(string(resMsg.MessageID))
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
@@ -337,11 +334,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
 		}
 
-		log.Println("Calling getInternalResHandler()")
-
 		getInternalResHandler()(senderAddr, resMsg)
-
-		log.Println("Returning from getInternalResHandler()")
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
 		// (not needed, just use FORWARDED_EXTERNAL_REQ)

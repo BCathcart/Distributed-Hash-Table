@@ -68,7 +68,7 @@ func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 	if lowerKey < upperKey {
 		return targetKey < upperKey && targetKey > lowerKey
 	} else { // Edge case where there's a wrap-around
-		return targetKey < lowerKey || targetKey > upperKey
+		return targetKey > lowerKey || targetKey < upperKey
 	}
 }
 
