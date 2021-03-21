@@ -96,17 +96,29 @@ func ExternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 	// 	// the request was handled by this node
 	// 	return fwdAddr, true, payload, err
 	// }
+	currAddr := *chainReplication.MyAddr
 	if !kvstore.IsKVRequest(kvRequest) {
 		// Any type of client request besides key-value requests gets handled here
 		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, util.KeyRange{}) //TODO change membershipcount
 		return nil, true, payload, err
+	}
+	if kvRequest.Key == nil {
+		// put the key for WIPEOUT requests
+		ipstr, portstr := util.GetIPPort(currAddr.String())
+		kvRequest.Key = []byte(ipstr + portstr)
+		log.Println("Putting key", util.Hash(kvRequest.Key), "for WIPEOUT Request isWipeout = ", kvRequest.Command == 0x05)
+	}
+	msg.Payload, err = proto.Marshal(kvRequest)
+	msg.CheckSum = uint64(util.ComputeChecksum(msg.MessageID, msg.Payload))
+	if err != nil {
+		return nil, false, nil, err
 	}
 	// the request does not belong to this node, route it to the right node
 	fwdAddr, err := getTransferAddr(kvRequest)
 	if err != nil {
 		return nil, false, nil, err
 	}
-	if strings.Compare((*fwdAddr).String(), (*chainReplication.MyAddr).String()) == 0 {
+	if strings.Compare((*fwdAddr).String(), currAddr.String()) == 0 {
 		chainReplication.AddRequest(&addr, msg)
 		fwdAddr = nil
 	}

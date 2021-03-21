@@ -2,7 +2,6 @@ package requestreply
 
 import (
 	"encoding/binary"
-	"hash/crc32"
 	"log"
 	"math/rand"
 	"net"
@@ -109,22 +108,12 @@ func getmsgID(clientIP string, port uint16) []byte {
 
 /**
 * Computes the IEEE CRC checksum based on the message ID and message payload.
-* @param msgID The message ID.
-* @param msgPayload The message payload.
-* @return The checksum.
- */
-func computeChecksum(msgID []byte, msgPayload []byte) uint32 {
-	return crc32.ChecksumIEEE(append(msgID, msgPayload...))
-}
-
-/**
-* Computes the IEEE CRC checksum based on the message ID and message payload.
 * @param msg The received message.
 * @return True if message ID matches the expected ID and checksum is valid, false otherwise.
  */
 func verifyChecksum(msg *pb.InternalMsg) bool {
 	// Verify MessageID is as expected
-	if uint64(computeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
+	if uint64(util.ComputeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
 		return false
 	}
 	return true
@@ -153,7 +142,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param payload The message payload.
  */
 func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
-	checksum := computeChecksum(msgID, payload)
+	checksum := util.ComputeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
 		MessageID: msgID,
@@ -399,7 +388,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 
 	msgID := getmsgID(ip, uint16(port))
 
-	checksum := computeChecksum(msgID, payload)
+	checksum := util.ComputeChecksum(msgID, payload)
 
 	reqMsg := &pb.InternalMsg{
 		MessageID:  msgID,

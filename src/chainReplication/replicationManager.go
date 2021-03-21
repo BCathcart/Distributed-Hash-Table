@@ -514,11 +514,12 @@ func handleClientRequest(msg *pb.InternalMsg) (*net.Addr, []byte, bool, error) {
 		return successor.addr, nil, true, err
 	}
 
-	// GET responded to here if they correspond to predecessors[0]
+	// GET responded to here if they correspond to the HEAD
 	if getHeadKeys().IncludesKey(key) && kvstore.IsGetRequest(kvRequest) {
 		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, getHeadKeys()) //TODO change membershipcount
 		return nil, payload, true, err
 	}
+	log.Println("handleClientRequest: the request for key", key, "is not mine!", predecessors[0].keys, predecessors[1].keys)
 	return nil, nil, false, nil
 }
 
