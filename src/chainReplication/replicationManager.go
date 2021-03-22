@@ -67,7 +67,7 @@ func dummySweeper(keys util.KeyRange) {
 }
 
 var sweepCache sweeperFunc = kvstore.Sweep
-var transferKeys transferFunc = dummyTransfer //TODO replace with actual transferfunc
+var transferKeys transferFunc = sendDataTransferReq //TODO replace with actual transferfunc
 
 // 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
 var predecessors [3]*predecessorNode
@@ -121,6 +121,18 @@ func (p *predecessorNode) getKeys() util.KeyRange {
 		return p.keys
 	}
 	return util.KeyRange{}
+}
+
+func getPredAddrForPrint() []string {
+	var addr []string = make([]string, 0)
+	for _, p := range predecessors {
+		if p != nil {
+			addr = append(addr, (*p.addr).String())
+		} else {
+			addr = append(addr, "<nil>")
+		}
+	}
+	return addr
 }
 
 // @return the keyrange for the HEAD of the current chain
@@ -177,7 +189,6 @@ func getPredKey(predNode *predecessorNode) uint32 {
 
 // TODO: may need to update both predecessors at once
 func UpdatePredecessors(addr []*net.Addr, keys []uint32) {
-	log.Println(addr)
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
@@ -198,17 +209,13 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32) {
 		}
 	}
 	// checkAddresses(addr, keys)
-	checkPredecessors(newPredecessors, sendDataTransferReq, sweepCache) // TODO Replace with brennan /shay functions
-	copyPredecessors(newPredecessors)                                   // TODO: Not sure if I can do this, seems a bit hacky
+	checkPredecessors(newPredecessors, transferKeys, sweepCache) // TODO Replace with brennan /shay functions
+	copyPredecessors(newPredecessors)                            // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
 		MyKeys.Low = newPredecessors[0].keys.High + 1
 	} else {
 		MyKeys.Low = MyKeys.High + 1
 	}
-
-	// for i := 0; i < 2; i++ {
-	// 	if predecessors[i] != nil {
-	// 		log.Println((*predecessors[i].addr).String(), predecessors[i].keys.low, predecessors[i].keys.high)
 }
 
 func copyPredecessors(newPredecessors [3]*predecessorNode) {
@@ -275,10 +282,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	}
 	PrintKeyChange(newPredecessors)
 
-	log.Println("\n\nNEW PREDECESSOR\n")
-	log.Println(pred1Equal)
-	log.Println(pred2Equal)
-	log.Println(pred3Equal)
+	log.Println("\n\nNEW PREDECESSOR", pred1Equal, pred2Equal, pred3Equal, "\n")
 
 	// If we newly joined, expect to receive keys
 	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
@@ -421,6 +425,7 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		return
 	}
 
+	/******************DEBUGGING********************/
 	log.Println("Pending transfers to send: ")
 	for _, transfer := range pendingTransfers {
 		log.Println((*transfer.coordinator).String())
@@ -429,16 +434,12 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	for _, coordinator := range expectedTransfers {
 		log.Println((*coordinator).String())
 	}
-	log.Println("Predecessors:")
-	for _, pred := range predecessors {
-		if pred != nil {
-			log.Println((*pred.addr).String())
-		}
-	}
-	log.Println("Successor: ")
+	log.Println("Predecessors:", getPredAddrForPrint())
+
 	if successor != nil {
-		log.Println((*successor.addr).String())
+		log.Println("Successor: ", (*successor.addr).String())
 	}
+	/************************************************/
 
 	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)
 	// ASSUMPTION: first node won't receive keys before the second node is launched
