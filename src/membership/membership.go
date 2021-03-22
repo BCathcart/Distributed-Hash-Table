@@ -71,7 +71,12 @@ func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int3
 		var randAddrTmp net.Addr = randAddr
 		if util.CreateAddressStringFromAddr(&randAddrTmp) == localAddrStr {
 			log.Println("WARN: cannot send membership request to yourself")
-			continue
+			if len(otherMembers) <= 1 {
+				log.Println("WARN: We are the first node, waiting to be contacted")
+				break
+			} else {
+				continue
+			}
 		}
 
 		log.Println("NOT THE LOCAL ADDRESS  ", util.CreateAddressStringFromAddr(&randAddrTmp), "  ", localAddrStr)
