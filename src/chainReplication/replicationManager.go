@@ -728,14 +728,14 @@ func handleRequests(requests <-chan request) {
 		var payload []byte
 		var isMine bool = false
 		var err error
-		var respondToClient bool
+		var isTail bool
 		switch reqMsg.InternalID {
 		case requestreply.EXTERNAL_MSG, requestreply.FORWARDED_CLIENT_REQ:
 			fwdAddr, payload, isMine, err = handleClientRequest(reqMsg)
-			respondToClient = fwdAddr == nil
+			isTail = fwdAddr == nil
 
 		case requestreply.FORWARDED_CHAIN_UPDATE_REQ:
-			fwdAddr, respondToClient, payload, isMine, err = handleForwardedChainUpdate(reqMsg)
+			fwdAddr, isTail, payload, isMine, err = handleForwardedChainUpdate(reqMsg)
 		}
 		if err != nil {
 			log.Println("WARN: error in handleRequests", err)
@@ -745,7 +745,7 @@ func handleRequests(requests <-chan request) {
 			log.Println("WARN: The request is no longer mine")
 			//go requestreply.ProcessExternalRequest(reqMsg, *req.sender) //this request is no longer our responsibility
 		} else {
-			requestreply.RespondToChainRequest(fwdAddr, req.sender, respondToClient, reqMsg, payload)
+			requestreply.RespondToChainRequest(fwdAddr, req.sender, isTail, reqMsg, payload)
 		}
 
 	}
