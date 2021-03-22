@@ -2,7 +2,6 @@ package membership
 
 import (
 	"log"
-	"math"
 	"math/rand"
 	"net"
 	"strconv"
@@ -159,7 +158,7 @@ func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int
 	memberStore_.position = 0
 	memberStore_.mykey = key
 	localAddr, _ := util.GetAddr(ip, int(port))
-	chainReplication.Init(localAddr, 0, math.MaxUint32)
+	chainReplication.Init(localAddr, key+1, key)
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {

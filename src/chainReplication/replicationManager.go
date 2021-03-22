@@ -157,12 +157,11 @@ func getPredKey(predNode *predecessorNode) uint32 {
 }
 
 // TODO: may need to update both predecessors at once
-func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
+func UpdatePredecessors(addr []*net.Addr, keys []uint32) {
 	log.Println(addr)
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
-	MyKeys.High = key
 	var newPredecessors [3]*predecessorNode
 	for i := 0; i < 3; i++ {
 		if addr[i] != nil {
@@ -172,7 +171,7 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 			if i < 2 && addr[i+1] != nil {
 				newPredecessors[i].keys.Low = keys[i+1] + 1
 			} else {
-				newPredecessors[i].keys.Low = key + 1
+				newPredecessors[i].keys.Low = MyKeys.High + 1
 			}
 		} else {
 			newPredecessors[i] = nil
@@ -184,6 +183,8 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32, key uint32) {
 	copyPredecessors(newPredecessors)                                   // TODO: Not sure if I can do this, seems a bit hacky
 	if newPredecessors[0] != nil {
 		MyKeys.Low = newPredecessors[0].keys.High + 1
+	} else {
+		MyKeys.Low = MyKeys.High + 1
 	}
 
 	// for i := 0; i < 2; i++ {
