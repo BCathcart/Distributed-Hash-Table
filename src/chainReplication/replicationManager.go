@@ -680,7 +680,10 @@ func addPendingTransfer(receiver *net.Addr, coordinator *net.Addr, keys util.Key
 	transfer := &pendingTransferInfo{receiver, coordinator, keys, timer}
 	go func() {
 		<-timer.C
+		coarseLock.Lock()
+		defer coarseLock.Unlock()
 		if coordinator != nil {
+			log.Println("WARN: Pending transfer timed out for ", util.CreateAddressStringFromAddr(coordinator))
 			removePendingTransfer(coordinator)
 		}
 	}()
@@ -693,7 +696,10 @@ func addExpectedTransfer(coordinator *net.Addr) {
 	transfer := &expectedTransferInfo{coordinator, timer}
 	go func() {
 		<-timer.C
+		coarseLock.Lock()
+		defer coarseLock.Unlock()
 		if coordinator != nil {
+			log.Println("WARN: Expected transfer timed out for ", util.CreateAddressStringFromAddr(coordinator))
 			removeExpectedTransfer(coordinator)
 		}
 	}()
@@ -706,8 +712,9 @@ func removePendingTransfer(coorAddr *net.Addr) {
 		return
 	}
 
-	for i := 0; i < len(pendingTransfers); {
-		if util.CreateAddressStringFromAddr(pendingTransfers[i].receiver) == util.CreateAddressStringFromAddr(coorAddr) {
+	for i, transfer := range pendingTransfers {
+		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(coorAddr) {
+			pendingTransfers[i].timer.Stop()
 			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
 			return
 		}
@@ -715,9 +722,8 @@ func removePendingTransfer(coorAddr *net.Addr) {
 }
 
 func removePendingTransfersToAMember(memAddr *net.Addr) {
-	log.Println("REMOVE PENDING TRANSFERS")
-	for i := 0; i < len(pendingTransfers); {
-		if util.CreateAddressStringFromAddr(pendingTransfers[i].receiver) == util.CreateAddressStringFromAddr(memAddr) {
+	for i := 0; i < len(pendingTransfers); i++ {
+		if util.CreateAddressStringFromAddr(pendingTransfers[i].coordinator) == util.CreateAddressStringFromAddr(memAddr) {
 			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
 		} else {
 			i++
@@ -732,6 +738,7 @@ func removeExpectedTransfer(coorAddr *net.Addr) bool {
 
 	for i, transfer := range expectedTransfers {
 		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(coorAddr) {
+			transfer.timer.Stop()
 			expectedTransfers = removeExpectedTransferInfoFromArr(expectedTransfers, i)
 			return true
 		}
