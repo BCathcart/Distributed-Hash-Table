@@ -128,7 +128,7 @@ func verifyChecksum(msg *pb.InternalMsg) bool {
 * @param msg The message to send.
  */
 func writeMsg(addr net.Addr, msg []byte) {
-	/*****************DEBUGGING**************************/
+	/*****************DEBUGGING**************************
 	// Deserialize message
 	message := &pb.InternalMsg{}
 	err1 := proto.Unmarshal(msg, message)
@@ -137,7 +137,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 		log.Println("WARN msg with invalid format to" + addr.String())
 	}
 	log.Println("Sending message isResponse = ", message.IsResponse, message.MessageID, "of type", message.InternalID, "to", addr.String())
-	/****************************************************/
+	***************************************************/
 
 	_, err := (*conn).WriteTo(msg, addr)
 	if err != nil {
@@ -309,7 +309,8 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
  */
 func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
-	log.Println("Received request of type", reqMsg.GetInternalID(), "from", returnAddr.String())
+	//DEBUGGING
+	// log.Println("Received request of type", reqMsg.GetInternalID(), "from", returnAddr.String())
 
 	// Check if response is already cached
 	resCache_.lock.Lock()
@@ -472,8 +473,6 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
-	log.Println("SEND UDP REQUEST with ID ", internalID)
-
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
