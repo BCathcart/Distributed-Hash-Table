@@ -73,6 +73,7 @@ func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int3
 			log.Println("WARN: cannot send membership request to yourself")
 			if len(otherMembers) <= 1 {
 				log.Println("WARN: We are the first node, waiting to be contacted")
+				memberStore_.getCurrMember().Status = STATUS_NORMAL
 				break
 			} else {
 				continue
