@@ -525,6 +525,7 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	for _, transfer := range expectedTransfers {
 		if util.CreateAddressStringFromAddr(transfer.coordinator) == string(msg.Payload) {
 			log.Print("\nTRANSFER IS EXPECTED!\n")
+			transfer.timer.Reset(15 * time.Second) // Reset timer
 			return msg.Payload, true
 		}
 	}
@@ -587,7 +588,6 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 	coorAddr, _ := util.DeserializeAddr(msg.Payload)
 	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
 
-	// NOTE: sweeper likely already removed it
 	removed := removeExpectedTransfer(coorAddr)
 
 	if !removed {
