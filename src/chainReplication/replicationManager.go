@@ -601,7 +601,7 @@ func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, b
 	// otherwise forward the update to the successor
 	log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
 
-	return successor.addr, false, nil, true, nil
+	return successor.addr, false, payload, true, nil
 }
 
 /**
@@ -705,7 +705,7 @@ func handleRequests(requests <-chan request) {
 		var err error
 		var respondToClient bool
 		switch reqMsg.InternalID {
-		case requestreply.EXTERNAL_REQ, requestreply.FORWARDED_CLIENT_REQ:
+		case requestreply.EXTERNAL_MSG, requestreply.FORWARDED_CLIENT_REQ:
 			fwdAddr, payload, isMine, err = handleClientRequest(reqMsg)
 			respondToClient = fwdAddr == nil
 

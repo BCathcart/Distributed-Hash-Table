@@ -26,7 +26,7 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 	var err error = nil
 	var fwdAddr *net.Addr = nil
 	var respond = true
-	var responseType = requestreply.GENERIC_RES
+	var responseType = int(msg.InternalID)
 
 	switch msg.InternalID {
 	case requestreply.MEMBERSHIP_REQ:

@@ -18,7 +18,7 @@ import (
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
-const EXTERNAL_REQ = 0x0
+const EXTERNAL_MSG = 0x0
 const MEMBERSHIP_REQ = 0x1
 const HEARTBEAT_MSG = 0x2
 const TRANSFER_FINISHED_MSG = 0x3
@@ -29,6 +29,7 @@ const DATA_TRANSFER_MSG = 0x7
 const FORWARDED_CHAIN_UPDATE_REQ = 0x8
 const TRANSFER_RES = 0x9
 const GENERIC_RES = 0xA
+const FORWARD_ACK_RES = 0xB //for acknowledging FORWARDED_CLIENT_REQ
 
 // Only receive transfer request during bootstrapping
 
@@ -137,12 +138,56 @@ func writeMsg(addr net.Addr, msg []byte) {
 
 /**
 * Sends a UDP message responding to a request.
-* @param conn The connection object to send messages over.
 * @param addr The IP address to send to.
 * @param msgID The message id.
 * @param payload The message payload.
+* @param internal_id The internal message id.
+* @param isInternal true if responding to an internal message.
  */
 func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
+
+	serMsg, err := cacheUDPResponse(msgID, payload, internal_id, isInternal)
+	if err != nil {
+		log.Println(err)
+	}
+
+	writeMsg(addr, serMsg)
+}
+
+/**
+* Send an Acknowledgement for a UDP request (with nil payload)
+* @param addr The IP address to send to.
+* @param msgID The message id.
+* @param internal_id The internal message id.
+ */
+func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
+	checksum := util.ComputeChecksum(msgID, nil)
+
+	resMsg := &pb.InternalMsg{
+		MessageID:  msgID,
+		Payload:    nil,
+		CheckSum:   uint64(checksum),
+		InternalID: internal_id,
+	}
+	serMsg, err := proto.Marshal(resMsg)
+	if err != nil {
+		log.Println(err)
+	}
+
+	writeMsg(addr, serMsg)
+}
+
+/**
+* Cache a UDP request message and return the serialized message.
+* @param addr The IP address to send to.
+* @param msgID The message id.
+* @param payload The message payload.
+* @param internal_id The internal message id.
+* @param isInternal true if responding to an internal message.
+* @return the serialized message
+* @return an error in case of failure
+ */
+func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isInternal bool) ([]byte, error) {
 	checksum := util.ComputeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
@@ -159,13 +204,13 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id ui
 
 	serMsg, err := proto.Marshal(resMsg)
 	if err != nil {
-		log.Println(err)
+		return nil, err
 	}
 
 	// Cache message
 	putResCacheEntry(string(msgID), serMsg)
 
-	writeMsg(addr, serMsg)
+	return serMsg, err
 }
 
 /*
@@ -212,7 +257,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
-	if reqMsg.InternalID == EXTERNAL_REQ {
+	if reqMsg.InternalID == EXTERNAL_MSG {
 		reqMsg.InternalID = FORWARDED_CLIENT_REQ
 		isFirstHop = true
 	}
@@ -252,7 +297,13 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	res := resCache_.data.Get(string(reqMsg.MessageID))
 	if res != nil {
 		resCacheEntry := res.(ResCacheEntry)
-		writeMsg(returnAddr, resCacheEntry.msg)
+		if reqMsg.GetAddr() != nil {
+			log.Println("Sending cached reply to", reqMsg.GetAddr().String())
+			writeMsg(reqMsg.GetAddr(), resCacheEntry.msg)
+		} else {
+			log.Println("Sending cached reply to", returnAddr.String())
+			writeMsg(returnAddr, resCacheEntry.msg)
+		}
 		// Reset timeout
 		resCacheEntry.time = time.Now()
 		resCache_.data.Put(string(reqMsg.MessageID), resCacheEntry) // TODO: does this overwrite?
@@ -263,7 +314,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 
 	// Determine if an internal or external message
 	// TODO: handle DATA_TRANSFER_MSG case
-	if reqMsg.InternalID != EXTERNAL_REQ && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
+	if reqMsg.InternalID != EXTERNAL_MSG && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
 		fwdAddr, respond, payload, responseType, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
@@ -293,9 +344,8 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	}
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// acknowledge forwarded client request
-		// sends message with payload of nil which just acts as an acknowledgement
 		log.Println("Acknowledging forwarded client request to server", messageSender.String())
-		sendUDPResponse(messageSender, reqMsg.MessageID, nil, reqMsg.InternalID, true)
+		sendUDPAck(messageSender, reqMsg.MessageID, FORWARD_ACK_RES)
 	}
 	if respondToClient {
 		// Send response to client
@@ -321,6 +371,9 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, respondToCl
 		//respond to forwarded chain update
 		log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
 		sendUDPResponse(*respondAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
+	} else {
+		//HEAD of chain -- cache the response for at-most-once policy
+		cacheUDPResponse(reqMsg.MessageID, payload, 0, false)
 	}
 	if fwdAddr != nil {
 		forwardUDPRequest(fwdAddr, nil, reqMsg, true)
