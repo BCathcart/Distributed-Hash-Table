@@ -335,7 +335,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	// TODO: handle DATA_TRANSFER_MSG case
 	if reqMsg.InternalID != EXTERNAL_MSG && reqMsg.InternalID != FORWARDED_CLIENT_REQ {
 		// Membership service is responsible for sending response or forwarding the request
-		fwdAddr, respond, payload, responseType, err := getInternalReqHandler()(returnAddr, reqMsg)
+		fwdAddr, respond, payload, _, err := getInternalReqHandler()(returnAddr, reqMsg)
 		if err != nil {
 			log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 			return
@@ -343,7 +343,7 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		if fwdAddr != nil {
 			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
 		} else if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, uint32(responseType), true)
+			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
 		}
 		return
 	}
@@ -417,7 +417,8 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
-	req := reqCache_.data.Get(string(resMsg.MessageID))
+	key := string(resMsg.MessageID) + strconv.Itoa(int(resMsg.InternalID))
+	req := reqCache_.data.Get(key)
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
 		/************DEBUGGING****************
@@ -452,7 +453,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
 		// TODO: Possible special handling for TRANSFER_FINISHED_MSG and MEMBERSHIP_REQ
-		reqCache_.data.Delete(string(resMsg.MessageID))
+		reqCache_.data.Delete(key)
 
 	} else {
 		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)

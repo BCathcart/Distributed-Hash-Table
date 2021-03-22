@@ -3,6 +3,7 @@ package requestreply
 import (
 	"log"
 	"net"
+	"strconv"
 	"time"
 )
 
@@ -144,17 +145,18 @@ func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, retu
 	}
 
 	reqCache_.lock.Lock()
-	req := reqCache_.data.Get(id)
+	key := id + strconv.Itoa(int(msgType))
+	req := reqCache_.data.Get(key)
 
 	// Increment retries if it already exists
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
 		reqCacheEntry.retries++
-		reqCache_.data.Put(id, reqCacheEntry)
+		reqCache_.data.Put(key, reqCacheEntry)
 
 		// Otherwise add a new entry
 	} else {
-		reqCache_.data.Put(id, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
+		reqCache_.data.Put(key, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
 	}
 	reqCache_.lock.Unlock()
 }
@@ -171,5 +173,5 @@ func reSendMsg(key string, reqCacheEntry *ReqCacheEntry) {
 	// Update num retries in
 	reqCacheEntry.retries++
 	reqCacheEntry.time = time.Now()
-	reqCache_.data.Put(string(key), *reqCacheEntry)
+	reqCache_.data.Put(key, *reqCacheEntry)
 }
