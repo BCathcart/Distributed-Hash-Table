@@ -472,6 +472,11 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 
 // TRANSFER_REQ internal msg type
 func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRange) {
+	if succAddr == nil {
+		log.Println("ERROR: Successor address should not be nil")
+		return
+	}
+
 	pendingTransfers = append(pendingTransfers, &transferInfo{succAddr, coorAddr, keys})
 
 	payload := util.SerializeAddr(coorAddr)

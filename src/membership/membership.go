@@ -66,12 +66,24 @@ func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int3
 		// Send request to random node (from list of nodes)
 		randIdx := rand.Intn(len(otherMembers))
 		randAddr := otherMembers[randIdx]
+		localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
+
+		var randAddrTmp net.Addr = randAddr
+		if util.CreateAddressStringFromAddr(&randAddrTmp) == localAddrStr {
+			log.Println("WARN: cannot send membership request to yourself")
+			if len(otherMembers) <= 1 {
+				log.Println("WARN: We are the first node, waiting to be contacted")
+				break
+			} else {
+				continue
+			}
+		}
+
+		log.Println("NOT THE LOCAL ADDRESS  ", util.CreateAddressStringFromAddr(&randAddrTmp), "  ", localAddrStr)
 
 		// Send heartbeat to the node to get gossip started of our existence started
-		var addr net.Addr = randAddr
-		gossipHeartbeat(&addr)
+		gossipHeartbeat(&randAddrTmp)
 
-		localAddrStr := util.CreateAddressString(thisIP, int(thisPort))
 		reqPayload := []byte(localAddrStr)
 		err := requestreply.SendMembershipRequest(reqPayload, randAddr.IP.String(), randAddr.Port)
 		if err != nil {
