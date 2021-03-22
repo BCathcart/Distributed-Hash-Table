@@ -46,6 +46,8 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 
 func main() {
 
+	// log.SetOutput(ioutil.Discard)
+
 	// TASK 2: Dockerize project and parse port and member list file arguments.
 	// I added the hardcoded "nodes" array that could be used for testing.
 	// - Rozhan
