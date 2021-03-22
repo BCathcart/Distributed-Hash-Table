@@ -146,7 +146,7 @@ func writeMsg(addr net.Addr, msg []byte) {
  */
 func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
 
-	serMsg, err := cacheUDPResponse(msgID, payload, internal_id, isInternal)
+	serMsg, err := cacheUDPResponse(msgID, payload, internal_id, isInternal, true)
 	if err != nil {
 		log.Println(err)
 	}
@@ -168,6 +168,7 @@ func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
 		Payload:    nil,
 		CheckSum:   uint64(checksum),
 		InternalID: internal_id,
+		IsResponse: true,
 	}
 	serMsg, err := proto.Marshal(resMsg)
 	if err != nil {
@@ -184,10 +185,11 @@ func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
 * @param payload The message payload.
 * @param internal_id The internal message id.
 * @param isInternal true if responding to an internal message.
+* @param isReady true if the response is ready to be sent to the client
 * @return the serialized message
 * @return an error in case of failure
  */
-func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isInternal bool) ([]byte, error) {
+func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isInternal bool, isReady bool) ([]byte, error) {
 	checksum := util.ComputeChecksum(msgID, payload)
 
 	resMsg := &pb.InternalMsg{
@@ -208,7 +210,7 @@ func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isIntern
 	}
 
 	// Cache message
-	putResCacheEntry(string(msgID), serMsg)
+	putResCacheEntry(string(msgID), serMsg, isReady)
 
 	return serMsg, err
 }
@@ -241,7 +243,7 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 	}
 
 	// Cache message
-	putResCacheEntry(string(resMsg.MessageID), serMsg)
+	putResCacheEntry(string(resMsg.MessageID), serMsg, false) //the entry is not ready to be sent by default
 
 	writeMsg(addr, serMsg)
 }
@@ -297,16 +299,18 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	res := resCache_.data.Get(string(reqMsg.MessageID))
 	if res != nil {
 		resCacheEntry := res.(ResCacheEntry)
-		if reqMsg.GetAddr() != nil {
-			log.Println("Sending cached reply to", reqMsg.GetAddr().String())
-			writeMsg(reqMsg.GetAddr(), resCacheEntry.msg)
-		} else {
-			log.Println("Sending cached reply to", returnAddr.String())
-			writeMsg(returnAddr, resCacheEntry.msg)
-		}
+		if resCacheEntry.isReady {
+			if reqMsg.GetAddr() != nil {
+				log.Println("Sending cached reply to", reqMsg.GetAddr().String())
+				writeMsg(reqMsg.GetAddr(), resCacheEntry.msg)
+			} else {
+				log.Println("Sending cached reply to", returnAddr.String())
+				writeMsg(returnAddr, resCacheEntry.msg)
+			}
+		} //ignore request if it's not propagated through the chain yet and the response is not ready
 		// Reset timeout
 		resCacheEntry.time = time.Now()
-		resCache_.data.Put(string(reqMsg.MessageID), resCacheEntry) // TODO: does this overwrite?
+		resCache_.data.Put(string(reqMsg.MessageID), resCacheEntry)
 		resCache_.lock.Unlock()
 		return
 	}
@@ -366,18 +370,23 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, respondToCl
 	if respondToClient {
 		log.Println("Sending response to client", reqMsg.GetAddr().String(), "for value", kvstore.BytetoInt(res.GetValue()))
 		sendUDPResponse(reqMsg.GetAddr(), reqMsg.MessageID, payload, reqMsg.InternalID, false)
-	}
-	if isForwardedChainUpdate {
 		//respond to forwarded chain update
 		log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
 		sendUDPResponse(*respondAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
+	}
+	if isForwardedChainUpdate {
+		if fwdAddr != nil {
+			//responses are automatically forwarded back to the HEAD since we set the respondAddr
+			forwardUDPRequest(fwdAddr, respondAddr, reqMsg, true)
+		}
 	} else {
 		//HEAD of chain -- cache the response for at-most-once policy
-		cacheUDPResponse(reqMsg.MessageID, payload, 0, false)
+		cacheUDPResponse(reqMsg.MessageID, payload, 0, false, false)
+		if fwdAddr != nil {
+			forwardUDPRequest(fwdAddr, nil, reqMsg, true)
+		}
 	}
-	if fwdAddr != nil {
-		forwardUDPRequest(fwdAddr, nil, reqMsg, true)
-	}
+
 }
 
 /**
@@ -407,6 +416,16 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		} else {
 			// log.Println("Received response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()))
+
+		}
+		if resMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ {
+			//update the cache to make request available
+			//assumes no failure!!!
+			log.Println("Received response from", senderAddr.String(), "updating rescache entry")
+			updated := setReadyResCacheEntry(resMsg.MessageID)
+			if !updated {
+				log.Println("WARN: the cached response for updated chain request from", senderAddr.String(), "was not found")
+			}
 		}
 
 		getInternalResHandler()(senderAddr, resMsg)

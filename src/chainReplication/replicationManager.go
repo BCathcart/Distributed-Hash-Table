@@ -577,6 +577,13 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 }
 
 // FORWARDED_CHAIN_UPDATE_REQ msg type
+/*
+* @return address of successor to forward to
+* @return true if this is the tail and we need to respond to the client
+* @return the payload of the response
+* @return false if the key doesn't belong to any of our predecessors
+* @return the error in case of failure
+ */
 func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, bool, error) {
 	log.Println("Received Forwarded Chain update")
 	// Unmarshal KVRequest
@@ -590,8 +597,14 @@ func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, b
 	// Find out where the request originated
 	var ownerKeys util.KeyRange
 	if predecessors[0].getKeys().IncludesKey(key) {
+		if predecessors[0] == nil {
+			log.Println("ERROR: keys predecessor 0 nil", predecessors[0].getKeys(), key, predecessors[0].getKeys().IncludesKey(key))
+		}
 		ownerKeys = predecessors[0].keys
 	} else if predecessors[1].getKeys().IncludesKey(key) {
+		if predecessors[1] == nil {
+			log.Println("ERROR: keys predecessor 1 nil", predecessors[0].getKeys(), key, predecessors[0].getKeys().IncludesKey(key))
+		}
 		ownerKeys = predecessors[1].keys
 	} else {
 		log.Println("HandleForwardedChainUpdate: the request for key", key, "is not mine!", predecessors[0].getKeys(), predecessors[1].getKeys())
@@ -602,7 +615,6 @@ func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, b
 	_, headKeys := getHead()
 	if headKeys.IncludesKey(key) {
 		// Reply if this is the tail
-		log.Println("Replying to Forwarded Chain update")
 		return nil, true, payload, true, err
 	}
 
@@ -731,7 +743,7 @@ func handleRequests(requests <-chan request) {
 		}
 		if !isMine {
 			log.Println("WARN: The request is no longer mine")
-			go requestreply.ProcessExternalRequest(reqMsg, *req.sender) //this request is no longer our responsibility
+			//go requestreply.ProcessExternalRequest(reqMsg, *req.sender) //this request is no longer our responsibility
 		} else {
 			requestreply.RespondToChainRequest(fwdAddr, req.sender, respondToClient, reqMsg, payload)
 		}
