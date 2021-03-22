@@ -119,6 +119,7 @@ func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	if targetMemberIdx == memberStore_.position {
 		// We don't want to continue if a transfer is already in progress
 		if memberStore_.transferNodeAddr != nil {
+			memberStore_.lock.RUnlock()
 			log.Println("WARN: Ignoring membership request b/c a transfer is already in progress")
 			return
 		}
