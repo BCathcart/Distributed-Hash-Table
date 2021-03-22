@@ -32,10 +32,11 @@ func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) b
 		var pos int = -1
 		for true {
 			pos = GetPosFromAddr(addr)
-			log.Println(pos)
 			if pos != -1 {
+				log.Println("\n\n INFO: FINISHED BOOTSTRAPPING - Node is in the member store", pos, "\n\n")
 				break
 			} else {
+				log.Println("\n\n WARN: FINISHED BOOTSTRAPPING - Node is NOT in the member store: ", pos, "\n\n")
 				memberStore_.lock.Unlock()
 				time.Sleep(1 * time.Second)
 				memberStore_.lock.Lock()

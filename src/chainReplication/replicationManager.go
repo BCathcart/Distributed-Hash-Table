@@ -38,7 +38,7 @@ type predecessorNode struct {
 	keys util.KeyRange
 }
 
-type transferInfo struct {
+type pendingTransferInfo struct {
 	receiver    *net.Addr
 	coordinator *net.Addr
 	keys        util.KeyRange
@@ -77,7 +77,7 @@ var MyAddr *net.Addr
 var MyKeys util.KeyRange
 
 // TODO: consider adding a lock to cover these
-var pendingTransfers []*transferInfo
+var pendingTransfers []*pendingTransferInfo
 var expectedTransfers []*net.Addr
 
 type request struct {
@@ -103,6 +103,15 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 			resendPendingTransfers()
 		}
 	}()
+
+	// var ticker2 = time.NewTicker(time.Millisecond * 1000)
+	// go func() {
+	// 	for {
+	// 		<-ticker2.C
+	// 		sweepExpectedTransfers()
+	// 	}
+	// }()
+
 	reqQueue = make(chan request, 1000)
 	go handleRequests(reqQueue)
 }
@@ -139,6 +148,9 @@ func expectingTransferFrom(addr *net.Addr) bool {
 }
 
 func resendPendingTransfers() {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
 	for _, transfer := range pendingTransfers {
 		payload := util.SerializeAddr(transfer.coordinator)
 		log.Println("\nSENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
@@ -276,12 +288,6 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		return
 	}
 
-	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
-		log.Println("\n\n EXPECTING TO RECEIVE KEYS FROM PREDECESSORS AFTER BOOTSTRAP\n")
-		expectedTransfers = append(expectedTransfers, newPred1.addr)
-		expectedTransfers = append(expectedTransfers, newPred2.addr)
-		return
-	}
 	/*
 		First and second predecessors stay the same (third is different).
 		This could mean either the third predecessor has failed, or a new node has joined
@@ -405,6 +411,11 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	defer coarseLock.Unlock()
 
 	if succAddr == nil {
+		// Clear pending transfers to the old successor
+		if successor != nil {
+			removePendingTransfersToAMember(successor.addr)
+		}
+
 		successor = nil
 		log.Println("Warn: Setting address to nil")
 		return
@@ -477,7 +488,7 @@ func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRa
 		return
 	}
 
-	pendingTransfers = append(pendingTransfers, &transferInfo{succAddr, coorAddr, keys})
+	pendingTransfers = append(pendingTransfers, &pendingTransferInfo{succAddr, coorAddr, keys})
 
 	payload := util.SerializeAddr(coorAddr)
 	log.Println("\nSENDING TRANSFER REQUEST FOR", (*coorAddr).String())
@@ -655,7 +666,7 @@ func handleClientRequest(msg *pb.InternalMsg) (*net.Addr, []byte, bool, error) {
 }
 
 /* Helpers */
-func addPendingTransfer(transfer *transferInfo) {
+func addPendingTransfer(transfer *pendingTransferInfo) {
 	removePendingTransfer(transfer.coordinator)
 	pendingTransfers = append(pendingTransfers, transfer)
 }
@@ -695,7 +706,7 @@ func removeExpectedTransfer(coorAddr *net.Addr) bool {
 	return false
 }
 
-func removeTransferInfoFromArr(s []*transferInfo, i int) []*transferInfo {
+func removeTransferInfoFromArr(s []*pendingTransferInfo, i int) []*pendingTransferInfo {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]
 }
