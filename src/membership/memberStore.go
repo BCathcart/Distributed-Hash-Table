@@ -193,9 +193,13 @@ func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
 	port := (*addr).(*net.UDPAddr).Port
 
 	ms.lock.Lock()
+	defer ms.lock.Unlock()
 	idx := ms.findIPPortIndex(ip, int32(port))
+	if idx == -1 {
+		log.Println((*addr).String(), "was not in member store!")
+		return
+	}
 	ms.members[idx].Status = int32(status)
-	ms.lock.Unlock()
 }
 
 func filterForStatusNormal(members []*pb.Member, mypos int) ([]*pb.Member, int) {

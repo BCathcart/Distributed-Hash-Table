@@ -133,5 +133,5 @@ func updateChain(lock *sync.RWMutex) {
 	} else {
 		chainReplication.UpdateSuccessor(nil, 0, 0)
 	}
-	chainReplication.UpdatePredecessors(addresses, keys, memberStore_.mykey)
+	chainReplication.UpdatePredecessors(addresses, keys)
 }
