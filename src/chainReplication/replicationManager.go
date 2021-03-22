@@ -107,6 +107,13 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 	go handleRequests(reqQueue)
 }
 
+func (p *predecessorNode) getKeys() util.KeyRange {
+	if p != nil {
+		return p.keys
+	}
+	return util.KeyRange{}
+}
+
 // @return the keyrange for the HEAD of the current chain
 func getHead() (*net.Addr, util.KeyRange) {
 	head := predecessors[1]
@@ -577,12 +584,12 @@ func handleForwardedChainUpdate(msg *pb.InternalMsg) (*net.Addr, bool, []byte, b
 
 	// Find out where the request originated
 	var ownerKeys util.KeyRange
-	if predecessors[0].keys.IncludesKey(key) {
+	if predecessors[0].getKeys().IncludesKey(key) {
 		ownerKeys = predecessors[0].keys
-	} else if predecessors[1].keys.IncludesKey(key) {
+	} else if predecessors[1].getKeys().IncludesKey(key) {
 		ownerKeys = predecessors[1].keys
 	} else {
-		log.Println("HandleForwardedChainUpdate: the request for key", key, "is not mine!", predecessors[0].keys, predecessors[1].keys)
+		log.Println("HandleForwardedChainUpdate: the request for key", key, "is not mine!", predecessors[0].getKeys(), predecessors[1].getKeys())
 		return nil, false, nil, false, nil
 	}
 
