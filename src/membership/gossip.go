@@ -85,6 +85,7 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	members := gossipMsg.GetMembers()
 
 	// TODO: locking the whole time is inefficient but will prevent runtime errors
+	log.Println("LOCKING MEMBERSTOR FOR GOSSIP")
 	memberStore_.lock.Lock()
 	for i := range members {
 		//TODO: Make finding IP Port index more efficient: currently runs finds for every member received
@@ -125,6 +126,7 @@ func updateChain(lock *sync.RWMutex) {
 	addresses, keys := getPredAddresses(preds)
 	successor, _ := getSuccessorFromPos(memberStore_.position)
 	memberStore_.lock.Unlock()
+	log.Println("UNLOCKING MEMBERSTOR FOR GOSSIP")
 
 	if successor != nil {
 		successorAddr, _ := getMemberAddr(successor)
