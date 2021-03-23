@@ -6,6 +6,10 @@ type KeyRange struct {
 }
 
 func (k KeyRange) IncludesKey(key uint32) bool {
+	if k.Low == k.High {
+		//need k.Low != k.High
+		return false
+	}
 	if k.Low < k.High {
 		return key <= k.High && key >= k.Low
 	}

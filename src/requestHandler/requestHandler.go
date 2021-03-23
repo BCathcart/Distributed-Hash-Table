@@ -26,7 +26,7 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 	var err error = nil
 	var fwdAddr *net.Addr = nil
 	var respond = true
-	var responseType = requestreply.GENERIC_RES
+	var responseType = int(msg.InternalID)
 
 	switch msg.InternalID {
 	case requestreply.MEMBERSHIP_REQ:
@@ -46,9 +46,8 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	case requestreply.TRANSFER_REQ:
 		payload, respond = chainReplication.HandleTransferReq(msg)
-		if respond {
-			responseType = requestreply.TRANSFER_RES
-		}
+		// NOTE: need to use request type to identify request in reqCache
+		// responseType = requestreply.TRANSFER_RES
 
 	case requestreply.DATA_TRANSFER_MSG:
 		err = transferService.HandleDataMsg(addr, msg)
@@ -162,7 +161,7 @@ func getTransferAddr(kvRequest *pb.KVRequest) (*net.Addr, error) {
 }
 
 func InternalResHandler(addr net.Addr, msg *pb.InternalMsg) {
-	if msg.InternalID == requestreply.TRANSFER_RES {
+	if msg.InternalID == requestreply.TRANSFER_RES || msg.InternalID == requestreply.TRANSFER_REQ {
 		chainReplication.HandleDataTransferRes(&addr, msg)
 	}
 }

@@ -34,9 +34,9 @@ func mockTransfer(addr *net.Addr, coordAddr *net.Addr, keys util.KeyRange) {
 	log.Printf("Called Transfer function with range %v, addr, %v\n", keys, (*addr).String())
 }
 
-func mockSweeper(keys util.KeyRange) {
-	sweeperCalls = append(sweeperCalls, sweeperCall{lowKey: keys.Low, highKey: keys.High})
-	log.Printf("Called Sweeper function with range [%v, %v]\n", keys.Low, keys.High)
+func mockSweeper(lowKey uint32, highKey uint32) {
+	sweeperCalls = append(sweeperCalls, sweeperCall{lowKey: lowKey, highKey: highKey})
+	log.Printf("Called Sweeper function with range [%v, %v]\n", lowKey, highKey)
 }
 
 func mostRecentTransfer() transferCall {
@@ -93,7 +93,7 @@ func TestComparePredecessorOneNil(t *testing.T) {
 	}
 }
 
-// Different low values but same High for keyrange, should still return true
+// Different low values but same high for util.KeyRange, should still return true
 func TestComparePredecessorDiffLows(t *testing.T) {
 	result := comparePredecessors(&predecessorNode{keys: util.KeyRange{Low: 1, High: 2}}, &predecessorNode{keys: util.KeyRange{Low: 0, High: 2}})
 	expected := true
@@ -102,7 +102,7 @@ func TestComparePredecessorDiffLows(t *testing.T) {
 	}
 }
 
-// Different High values for keyrange, should return false
+// Different high values for util.KeyRange, should return false
 func TestComparePredecessorDiffHighs(t *testing.T) {
 	result := comparePredecessors(&predecessorNode{keys: util.KeyRange{Low: 1, High: 3}}, &predecessorNode{keys: util.KeyRange{Low: 1, High: 2}})
 	expected := false
