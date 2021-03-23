@@ -55,7 +55,7 @@ Membership protocol: after receiving the transfer finished from the successor no
 sets status to normal
 */
 func BootstrapTransferFinishedHandler() {
-	log.Println("RECEIVED TRANSFER FINISHED MSG")
+	log.Println("RECEIVED BOOTSTRAPPING TRANSFER FINISHED MSG")
 
 	memberStore_.lock.Lock()
 	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL

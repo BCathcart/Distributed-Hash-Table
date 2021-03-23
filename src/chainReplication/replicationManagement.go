@@ -200,11 +200,9 @@ func removePendingTransfer(coorAddr *net.Addr) {
 }
 
 func removePendingTransfersToAMember(memAddr *net.Addr) {
-	for i := 0; i < len(pendingTransfers); i++ {
-		if util.CreateAddressStringFromAddr(pendingTransfers[i].coordinator) == util.CreateAddressStringFromAddr(memAddr) {
+	for i, transfer := range pendingTransfers {
+		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(memAddr) {
 			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
-		} else {
-			i++
 		}
 	}
 }
