@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
@@ -125,6 +126,19 @@ func updateChain(lock *sync.RWMutex) {
 	addresses, keys := getPredAddresses(preds)
 	successor, _ := getSuccessorFromPos(memberStore_.position)
 	memberStore_.lock.Unlock()
+
+	// Send pings to make sure everyone is alive
+	for _, addr := range addresses {
+		if addr != nil {
+			requestreply.SendPingRequest(addr)
+		}
+	}
+	if successor != nil {
+		addr, _ := util.GetAddr(string(successor.Ip), int(successor.Port))
+		if addr != nil {
+			requestreply.SendPingRequest(addr)
+		}
+	}
 
 	if successor != nil {
 		successorAddr, _ := getMemberAddr(successor)
