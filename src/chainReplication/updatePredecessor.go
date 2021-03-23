@@ -159,11 +159,8 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred2 == nil || newPred2 == nil {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
-			sweepCache(newPred2.keys)
-		} else if comparePredecessors(newPred3, oldPred2) { // P2 Failed. Will be receiving keys from p1
 			log.Println("\n\nNEW SECOND PREDECESSOR JOINED\n")
-			addExpectedTransfer(newPred1.addr)
-			go sweepCache(util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+			sweepCache(oldPred2.keys)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
 			log.Println("\n\n SECOND PREDECESSOR FAILED\n\n")
 			addExpectedTransfer(newPred2.addr)
@@ -198,7 +195,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 				addExpectedTransfer(newPred2.addr)
 			}
 			if oldPred2 != nil {
-				go transferKeys(successor.addr, newPredecessors[0].addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
+				go transferKeys(successor.addr, oldPred2.addr, util.KeyRange{Low: oldPred2.keys.Low, High: oldPred2.keys.High})
 			}
 		} else if comparePredecessors(oldPred3, newPred1) { // Both Node 1 and Node 2 have failed.
 			if oldPred2 != nil {
