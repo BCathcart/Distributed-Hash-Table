@@ -422,6 +422,8 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 
+	// DEADLOCKS HERE after updateSuccessor() sometimes (never unlocks)
+
 	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()

@@ -57,6 +57,7 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 
 // DATA_TRANSFER_MSG internal msg type
 func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
+	log.Println("Got data transfer message")
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)

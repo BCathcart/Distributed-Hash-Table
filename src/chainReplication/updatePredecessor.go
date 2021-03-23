@@ -239,7 +239,7 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 			log.Println(newPredecessors[i].keys)
 		}
 	}
-	log.Fatalf("UNHANDLED SCENARIO, INTENTIONALLY CRASHING (REMOVE THIS FUNCTION LATER)")
+	log.Println("UNHANDLED SCENARIO, INTENTIONALLY CRASHING (REMOVE THIS FUNCTION LATER)")
 
 }
 

@@ -10,7 +10,7 @@ import (
 // Maps msg ID to serialized response
 var reqCache_ *Cache
 
-const REQ_RETRY_TIMEOUT_MS = 250 // ms
+const REQ_RETRY_TIMEOUT_MS = 500 // ms
 const REQ_CACHE_TIMEOUT = 6      // sec
 
 type ReqCacheEntry struct {
@@ -68,7 +68,7 @@ func sweepReqCache() {
 
 	// Send ping requests
 	for _, addr := range membersToPing {
-		sendUDPRequest(addr, nil, PING_MSG)
+		SendPingRequest(addr)
 	}
 
 }

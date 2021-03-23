@@ -29,12 +29,7 @@ func SendMembershipRequest(payload []byte, ip string, port int) error {
 }
 
 //SendPingRequest - a simple ping
-func SendPingRequest(ip string, port int) error {
-	addr, err := util.GetAddr(ip, port)
-	if err != nil {
-		log.Println("WARN Could not resolve member UDP addr")
-		return err
-	}
+func SendPingRequest(addr *net.Addr) error {
 	sendUDPRequest(addr, nil, PING_MSG)
 	return nil
 }
