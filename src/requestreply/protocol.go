@@ -343,7 +343,13 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		if fwdAddr != nil {
 			forwardUDPRequest(fwdAddr, &returnAddr, reqMsg, false)
 		} else if respond {
-			sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
+			id := reqMsg.InternalID
+			// Only cache the response if necessary
+			if id == PING_MSG || id == HEARTBEAT_MSG || id == DATA_TRANSFER_MSG {
+				sendUDPAck(returnAddr, reqMsg.MessageID, id)
+			} else {
+				sendUDPResponse(returnAddr, reqMsg.MessageID, payload, id, true)
+			}
 		}
 		return
 	}
@@ -364,7 +370,9 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// acknowledge forwarded client request
 		log.Println("Acknowledging forwarded client request  to server", messageSender.String())
-		sendUDPAck(messageSender, reqMsg.MessageID, FORWARD_ACK_RES)
+		// sendUDPAck(messageSender, reqMsg.MessageID, FORWARD_ACK_RES)
+		// NOTE: we need to use same ID for responses for now to identify the requests in the request cache
+		sendUDPAck(messageSender, reqMsg.MessageID, FORWARDED_CLIENT_REQ)
 	}
 	if respondToClient {
 		// Send response to client

@@ -14,7 +14,7 @@ const RES_CACHE_TIMEOUT = 6 // Messages only required to live in cache for 5 sec
 Note: the cache has a small cap for now due to the nature of only having a small number
 of clients sending messages. The cache will need to expanded in the future once we have a
 better idea of the likely number of clients and their retry rate. */
-const MAX_RES_CACHE_ENTRIES = 50
+const MAX_RES_CACHE_ENTRIES = 200
 
 // Maps msg ID to serialized response
 var resCache_ *Cache

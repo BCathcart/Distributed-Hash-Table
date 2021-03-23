@@ -46,9 +46,8 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	case requestreply.TRANSFER_REQ:
 		payload, respond = chainReplication.HandleTransferReq(msg)
-		if respond {
-			// responseType = requestreply.TRANSFER_RES
-		}
+		// NOTE: need to use request type to identify request in reqCache
+		// responseType = requestreply.TRANSFER_RES
 
 	case requestreply.DATA_TRANSFER_MSG:
 		err = transferService.HandleDataMsg(addr, msg)
