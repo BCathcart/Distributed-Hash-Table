@@ -11,6 +11,10 @@ import (
 
 /*
 * Transfers all keys to the bootstrapping node
+* @param addr The address of the receiving server
+* @param minKey Lower bound of the key range
+* @param maxKey Upper bound of the key range
+* @return false if a transfer is already in progress, true otherwise
  */
 func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) bool {
 	memberStore_.lock.Lock()
@@ -33,10 +37,10 @@ func transferToBootstrappingPred(addr *net.Addr, minKey uint32, maxKey uint32) b
 		for true {
 			pos = GetPosFromAddr(addr)
 			if pos != -1 {
-				log.Println("\n\n INFO: FINISHED BOOTSTRAPPING - Node is in the member store", pos, "\n\n")
+				log.Println("INFO: FINISHED BOOTSTRAPPING - Node is in the member store at position ", pos)
 				break
 			} else {
-				log.Println("\n\n WARN: FINISHED BOOTSTRAPPING - Node is NOT in the member store: ", pos, "\n\n")
+				log.Println("WARN: FINISHED BOOTSTRAPPING - Node is NOT in the member store yet")
 				memberStore_.lock.Unlock()
 				time.Sleep(1 * time.Second)
 				memberStore_.lock.Lock()
@@ -55,8 +59,7 @@ Membership protocol: after receiving the transfer finished from the successor no
 sets status to normal
 */
 func BootstrapTransferFinishedHandler() {
-	log.Println("RECEIVED BOOTSTRAPPING TRANSFER FINISHED MSG")
-
+	log.Println("INFO: RECEIVED BOOTSTRAPPING TRANSFER FINISHED MSG")
 	memberStore_.lock.Lock()
 	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
 	memberStore_.lock.Unlock()

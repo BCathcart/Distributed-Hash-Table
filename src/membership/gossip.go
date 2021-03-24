@@ -26,7 +26,10 @@ func tickHeartbeat() {
 	memberStore_.lock.Unlock()
 }
 
-// Sends the entire member array in the MemberStore.
+/*
+* Gossip the node's membership info (entire member store) to another member
+* @param addr The address of the node to send to. If it's nil, picks a random member.
+ */
 func gossipHeartbeat(addr *net.Addr) {
 
 	// Pick random member if an address is not provided
@@ -66,14 +69,13 @@ func gossipHeartbeat(addr *net.Addr) {
 	}
 }
 
-// Compares incoming member array with current member array and
-// update entries to the one with the larger heartbeat (i.e. newer gossip)
-// TODO: (Not a big priority for M1) If we receive a heartbeat update from a predecessor
-// that had status "Unavailable" at this node, then we can transfer any keys we were storing for it
-// - need to check version number before writing
+/*
+* Compares incoming member array with current member array and updates member info
+* if their heartbeat is newer.
+* @param addr The address of the member that sent the heartbeat. (TODO: remove)
+* @param msg The heartbeat message
+ */
 func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
-	log.Println("RECEIVED HEARTBEAT MSG")
-
 	payload := msg.GetPayload()
 
 	gossipMsg := &pb.Members{}
@@ -85,7 +87,7 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 	reindex := false
 	members := gossipMsg.GetMembers()
 
-	// TODO: locking the whole time is inefficient but will prevent runtime errors
+	// TODO: finer-grained locks
 	memberStore_.lock.Lock()
 	for i := range members {
 		//TODO: Make finding IP Port index more efficient: currently runs finds for every member received
@@ -101,8 +103,7 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 			}
 			status := members[i].GetStatus()
 			if status == STATUS_UNAVAILABLE {
-				// ignore unavailable status from another node since
-				// failure detection is local
+				// Ignore unavailable status from another node since failure detection is local
 				status = memberStore_.members[localidx].GetStatus()
 			}
 			memberStore_.members[localidx] = members[i]
@@ -112,14 +113,17 @@ func HeartbeatHandler(addr net.Addr, msg *pb.InternalMsg) {
 
 	if reindex {
 		memberStore_.sortAndUpdateIdx()
+		log.Println(memberStore_.members)
 	}
+
 	updateChain(&memberStore_.lock)
-
-	log.Println(memberStore_.members)
-
 }
 
-//call with memberstore lock held
+/*
+ * Provides the latest predecessor and successor info to the chain replication layer.
+ * @param The memberstore lock
+ * @warn Must be called with the memberstore lock held
+ */
 func updateChain(lock *sync.RWMutex) {
 	// get the last 3 predecessors
 	preds := searchForPredecessors(memberStore_.position, 3)
