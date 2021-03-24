@@ -15,7 +15,6 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-/************* APPLICATION CODE *************/
 var MAX_MEM_USAGE uint64 = 120 * 1024 * 1024 // Max is actually 128 MB (8MB of buffer)
 
 const MAX_KEY_LEN = 32
@@ -227,6 +226,9 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 	return nil
 }
 
+/*
+* Deletes all keys in the kvStore within the key range
+ */
 func Sweep(keys util.KeyRange) {
 	kvStore_.WipeoutKeys(keys)
 }

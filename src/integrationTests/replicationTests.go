@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"log"
@@ -24,16 +23,14 @@ func getPortKV(low uint32, high uint32) *pb.KVRequest {
 	return payload
 }
 
-func sendToPort(conn *net.UDPConn, port int, targetPort int, numKeys int) {
+func sendToPort(addr *net.Addr, targetPort int, numKeys int) {
 	low, high := getKeyRange(targetPort)
-	//fmt.Printf("Looking for keys between %v and %v. Map = %v\n", low, high, portKeyMap)
-
 	for i := 0; i < numKeys; i++ {
 		payload := getPortKV(low, high)
 		prevRequests = append(prevRequests, payload)
-		status, kvRes := keyValueRequest(conn, port, payload)
-		handleKVRequest(status, kvRes)
-		//time.Sleep(500 * time.Millisecond)
+		keyValueRequest(addr, payload)
+		//handleKVRequest(status, kvRes)
+		//time.Sleep(50 * time.Millisecond)
 	}
 }
 
@@ -45,7 +42,7 @@ func findCorrectKey(low uint32, high uint32) []byte {
 		if util.BetweenKeys(hashKey, low, high) {
 			//log.Printf("FOUND: %v BETWEEN [%v %v]. ", hashKey, low, high)
 			//log.Printf("Proof: (target -low ), (high -target) = %v , %v", hashKey-low, high - hashKey)
-			log.Printf("Attempting  %v\n", randKey)
+			//log.Printf("Attempting  %v\n", randKey)
 			return randKey
 		}
 	}
@@ -53,13 +50,13 @@ func findCorrectKey(low uint32, high uint32) []byte {
 	return nil
 }
 
-func fetchPrevKeys(conn *net.UDPConn, port int) {
+func fetchPrevKeys(addr *net.Addr) {
 	for i := 0; i < len(prevRequests); i++ {
 		targetKey := prevRequests[i].Key
 		payload := getRequest(targetKey)
 		log.Println(payload.Key)
-		status, kvRes := keyValueRequest(conn, port, payload)
-		handleKVRequest(status, kvRes)
+		keyValueRequest(addr, payload)
+		//handleKVRequest(status, kvRes)
 	}
 }
 
@@ -77,6 +74,7 @@ func getKeyRange(portNum int) (uint32, uint32) {
 			break
 		}
 	}
+
 	succ1, succ2 := (keyIdx+1)%len(keyList), (keyIdx+2)%len(keyList)
 	nextKey1, nextKey2 := keyList[succ1], keyList[succ2]
 	nextPort1, nextPort2 := -1, -1
@@ -96,31 +94,28 @@ func getKeyRange(portNum int) (uint32, uint32) {
 }
 
 func replicationTest() {
+	log.Printf("CONN %v", ClientConn)
 	//============================ CUSTOM PARAMETERS ========================================
 	serverIPaddress := "192.168.1.74"
 	basePort := 8080                                   // Base port client is connecting to.
 	targetPort := 8083                                 // Port where keys will target.
 	listOfPorts := []int{8080, 8081, 8082, targetPort} // Other ports in system
 	numKeysToSend := 100
+	// Open sockets to the server
 	// ======================================================================//
-
 	for i := 0; i < len(listOfPorts); i++ {
 		addr, _ := util.GetAddr(serverIPaddress, listOfPorts[i])
 		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
 	}
-	// Open socket to the server
-	conn, err := connectToServer(serverIPaddress, basePort)
-	if err != nil {
-		fmt.Println("Failed to connect to server. ", err.Error())
-		return
-	}
-	defer conn.Close()
-	sendToPort(conn, basePort, targetPort, numKeysToSend)
-	//sendToPort(conn, basePort, 8081, numKeysToSend)
-	// 100 should land on each
+	baseAddr, _ := GetAddr(serverIPaddress, basePort)
+	sendToPort(baseAddr, targetPort, numKeysToSend)
 	log.Printf("SENT %v  requests", len(prevRequests))
-	log.Printf("SLEEPING 30S, MANUALLY KILL SERVER WITH PORT %v", targetPort)
-	time.Sleep(50 * time.Second)
-	log.Println("WAKING UP, TRYING TO FETCH KEYS NOW")
-	fetchPrevKeys(conn, basePort)
+	log.Println("TRYING TO FETCH KEYS NOW")
+	fetchPrevKeys(baseAddr)
+	var i int
+	for start := time.Now(); time.Since(start) < 20*time.Second; {
+		i++
+	}
+	log.Println("CACHE LENGTH ", testReqCache_.data.Len())
+	//intentionallyCrash()
 }

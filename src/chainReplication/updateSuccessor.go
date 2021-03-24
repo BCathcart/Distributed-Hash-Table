@@ -23,19 +23,7 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	}
 
 	/******************DEBUGGING********************/
-	log.Println("Pending transfers to send: ")
-	for _, transfer := range pendingTransfers {
-		log.Println((*transfer.coordinator).String())
-	}
-	log.Println("Expected transfer to receive: ")
-	for _, transfer := range expectedTransfers {
-		log.Println((*transfer.coordinator).String())
-	}
-	log.Println("Predecessors:", getPredAddrForPrint())
-
-	if successor != nil {
-		log.Println("Successor: ", (*successor.addr).String())
-	}
+	printState()
 	/************************************************/
 
 	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)

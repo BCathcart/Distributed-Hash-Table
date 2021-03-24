@@ -12,9 +12,7 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
-// TODO(Brennan): should add callback to reqreply layer so that
-// transfer PUT msgs are handled here. When a transfer is done,
-// start accepting GET requests for those keys
+// Only after a transfer is done, start accepting GET requests for those keys
 
 /*
 	keyRange struct maintains all of the keys a predecessor/successor node is responsible for.
@@ -62,7 +60,6 @@ var successor *successorNode
 var MyAddr *net.Addr
 var MyKeys util.KeyRange
 
-// TODO: consider adding a lock to cover these
 var pendingTransfers []*pendingTransferInfo
 var expectedTransfers []*expectedTransferInfo
 
@@ -230,4 +227,20 @@ func removePendingTransferInfoFromArr(s []*pendingTransferInfo, i int) []*pendin
 func removeExpectedTransferInfoFromArr(s []*expectedTransferInfo, i int) []*expectedTransferInfo {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]
+}
+
+func printState() {
+	log.Println("Pending transfers to send: ")
+	for _, transfer := range pendingTransfers {
+		log.Println((*transfer.coordinator).String())
+	}
+	log.Println("Expected transfer to receive: ")
+	for _, transfer := range expectedTransfers {
+		log.Println((*transfer.coordinator).String())
+	}
+	log.Println("Predecessors:", getPredAddrForPrint())
+
+	if successor != nil {
+		log.Println("Successor: ", (*successor.addr).String())
+	}
 }
