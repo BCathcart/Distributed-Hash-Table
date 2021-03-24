@@ -31,12 +31,6 @@ Thomas Broatch | tbroatch98
     - The successor can forward requests to the node it is transferring to as needed.
     - Once the transfer has finished (or the successor happens to fail so that the transfer ends), then the new node’s status is set to “Normal” which will be gossiped around
     - All other nodes will now forward requests with keys the new node is responsible for directly to the new node once they get this info through gossip
-- Failure detection could be done completely locally (like Cassandra)
-    - Each node comes to their own conclusion that a node has failed if they cannot route a request to it and sets its status as "Unavailable" locally 
-    - If they are wrong about the node failing, they would simply forward requests to the wrong node which would then forward the requests to the right node
-    - When the successor node detects that the node has failed, it will take ownership of the failed node’s keys (it will handle any requests it receives with keys the suspected failed node is responsible for)
-    - If the successor then receives a heartbeat from the suspected failed node, it will transfer any new data it stored for the keys it temporarily took ownership of (not yet implemented)
-
 
 
 ## Request/Reply Protocol
@@ -51,7 +45,10 @@ Thomas Broatch | tbroatch98
     - If the message is queued without a return address, handle the response
     - I don't believe anything needs to be handled in our current cases. Requiring responses in these cases is solely for detecting "Unavailable" nodes.
     - In both cases remove the corresponding request from the request cache
-
+- Failures
+  - Each node comes to their own conclusion that a node has failed if they cannot route a request to it and sets its status as "Unavailable" locally
+  - If they are wrong about the node failing, they would simply forward requests to the wrong node which would then forward the requests to the right node
+  - When the successor node detects that the node has failed, it will take ownership of the failed node’s keys (it will handle any requests it receives with keys the suspected failed node is responsible for)
 Periodically check the request queue for timed out messages. If an internal message timed out once, resend it. If a response still isn't received, send a ping to check if it's available.
 
 Types of Messages:
@@ -61,11 +58,34 @@ Types of Messages:
 Membership Store
 ```
 type ReqCacheEntry struct {
-    msg        []byte
-    time       time.Time
-    retries    uint8
-    returnAddr *net.Addr
-    firstHop   bool // Used so we know to remove "internalID" from response
-    clientReq  bool // Used to make sure we don't retry a client request ourselves
+    msgType    uint8  // i.e. Internal ID
+	msg        []byte // serialized message to re-send
+	time       time.Time
+	retries    uint8
+	addr       *net.Addr
+	returnAddr *net.Addr
+	isFirstHop bool // Used so we know to remove "internalID" and "isResponse" from response
 }
 ```
+
+## Data Replication - general design
+- For M2, our design uses chain replication
+  - To maintain a replication factor of 3, keys that belong to a node will also be replicated at the next 2 nodes.
+  - To ensure that the data is being replicated correctly through the chain, the last node in the chain will respond to the client.
+  - In the chainReplication package, each node will keep track of its three predecessors (the first three nodes before 
+    a node in the ring) and one successor (the first node after a node in the ring). 
+    - This allows the nodes to detect changes to the keyspace (failures or new nodes)
+## Data Replication - handling keyspace changes 
+- When a node detects changes to its predecessors / successors, the updatePredecessor and updateSuccessor functions 
+  will determine the appropriate course of action based on the node's relative position to the new / failed node.
+    - In general, a failed predecessor / successor node means that our node will need to transfer some of its keys to a successor node, in order to maintain
+      a replication factor of 3. A new predecessor / successor node joining means that the node is no longer responsible for some of its keys and should remove them from its store.
+    - All scenarios and corresponding actions are listed here: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
+    - These scenarios above are also tested in the replicationManager_test file 
+## Integration Testing
+- To help test our code, we extended the client from the individual programming assignments.
+- This helped with debugging in the earlier phases of development for this milestone
+  - However, due to changes in how we handle messages (the node that sends
+  messages back to the client is not the same node that the client sends its requests to) they are currently not
+  fully functional, but we plan of have them updated for milestone 3.
+
