@@ -63,8 +63,7 @@ var MyKeys util.KeyRange
 var pendingTransfers []*pendingTransferInfo
 var expectedTransfers []*expectedTransferInfo
 
-// TODO: add finer-grained locks for M3
-var coarseLock sync.RWMutex
+var coarseLock sync.RWMutex // TODO: add finer-grained locks for M3
 
 func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 	MyKeys.Low = keylow
@@ -84,14 +83,14 @@ func Init(addr *net.Addr, keylow uint32, keyhigh uint32) {
 	go handleRequests(reqQueue)
 }
 
-/* HELPERS */
+/* Replication Management Helpers */
 func resendPendingTransfers() {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
 	for _, transfer := range pendingTransfers {
 		payload := util.SerializeAddr(transfer.coordinator)
-		log.Println("\nSENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
+		log.Println("INFO: SENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
 		requestreply.SendTransferReq(payload, transfer.receiver)
 	}
 }
@@ -149,7 +148,6 @@ func getPredKey(predNode *predecessorNode) uint32 {
 	return predNode.keys.High
 }
 
-/* Helpers */
 func addPendingTransfer(receiver *net.Addr, coordinator *net.Addr, keys util.KeyRange) {
 	timer := time.NewTimer(time.Duration(TRANSFER_TIMEOUT) * time.Second)
 	transfer := &pendingTransferInfo{receiver, coordinator, keys, timer}

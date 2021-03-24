@@ -36,11 +36,13 @@ func sweepReqCache() {
 	var membersToPing []*net.Addr
 	var errResponseAddrs []*errRes
 
+	// get all entries currently in the cache and iterate thru them
 	reqCache_.lock.Lock()
 	entries := reqCache_.data.Entries()
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
 
+		// check for timeout on each entry
 		reqCacheEntry := entry.Value.(ReqCacheEntry)
 		elapsedTime := time.Now().Sub(reqCacheEntry.time)
 
@@ -77,6 +79,7 @@ func sweepReqCache() {
 
 /*
 * Handles requests that have not received a response within the timeout period
+* @param key The entry's key
 * @param reqCacheEntry The timed out cache entry
 * @return node to Ping, -1 no nodes need to be pinged.
 * @return clients/nodes address to send error responses too, nil if no error responses need to be sent.
@@ -140,10 +143,12 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 * @param isFirstHop True if the request originated from a client and is being forwarded internally for the first time, false otherwise
  */
 func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, returnAddr *net.Addr, isFirstHop bool) {
+	// check for false indication of a first hop
 	if isFirstHop && (msgType != FORWARDED_CLIENT_REQ && msgType != FORWARDED_CHAIN_UPDATE_REQ) {
 		panic("isFirstHop can only be true for client requests")
 	}
 
+	// generate the key and construct entry
 	reqCache_.lock.Lock()
 	key := id + strconv.Itoa(int(msgType))
 	req := reqCache_.data.Get(key)
@@ -164,6 +169,7 @@ func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, retu
 /*
 * Re-sends the cached request.
 * IMPORTANT: caller must be holding reqCache lock.
+* @param key The entry's key.
 * @param reqCacheEntry The cached request to re-send.
  */
 func reSendMsg(key string, reqCacheEntry *ReqCacheEntry) {

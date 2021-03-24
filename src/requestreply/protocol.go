@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// global variable - the UDP connection
 var conn *net.PacketConn
 
 /* Internal Msg IDs */
@@ -40,6 +41,8 @@ const MAX_BUFFER_SIZE = 11000
 /**
 * Initializes the request/reply layer. Must be called before using
 * request/reply layer to get expected functionality.
+* @param connection a UDP connection object for this server
+* @param *Handler a specification of which handler function to be chosen for each handler
  */
 func RequestReplyLayerInit(connection *net.PacketConn,
 	externalReqHandler externalReqHandlerFunc,
@@ -47,7 +50,7 @@ func RequestReplyLayerInit(connection *net.PacketConn,
 	nodeUnavailableHandler func(addr *net.Addr),
 	internalResHandler func(addr net.Addr, msg *pb.InternalMsg)) {
 
-	/* Store handlers */
+	/* set req/resp handlers */
 	setExternalReqHandler(externalReqHandler)
 	setInternalReqHandler(internalReqHandler)
 	setNodeUnavailableHandler(nodeUnavailableHandler)
@@ -58,7 +61,6 @@ func RequestReplyLayerInit(connection *net.PacketConn,
 
 	// Sweep cache every RES_CACHE_TIMEOUT seconds
 	var ticker = time.NewTicker(time.Second * RES_CACHE_TIMEOUT)
-
 	go func() {
 		for {
 			<-ticker.C
@@ -71,7 +73,6 @@ func RequestReplyLayerInit(connection *net.PacketConn,
 
 	// Sweep cache every REQ_CACHE_TIMEOUT seconds
 	var ticker2 = time.NewTicker(time.Millisecond * REQ_RETRY_TIMEOUT_MS)
-
 	go func() {
 		for {
 			<-ticker2.C
@@ -79,16 +80,19 @@ func RequestReplyLayerInit(connection *net.PacketConn,
 		}
 	}()
 
+	// set up the UDP connection for this server
 	conn = connection
 }
 
 /**
-* Generates a unique 16 byte ID.
+* Generates a unique 16 byte ID based on the client's IP, port number, and current time
 * @param clientIP The client's IP address.
 * @param port Server port number.
 * @return The unique ID as a 16 byte long byte array.
  */
 func getmsgID(clientIP string, port uint16) []byte {
+
+	// process client's IP
 	ipArr := strings.Split(clientIP, ".")
 	ipBytes := make([]byte, 5)
 	for i, s := range ipArr {
@@ -97,10 +101,15 @@ func getmsgID(clientIP string, port uint16) []byte {
 	}
 	ipBytes = ipBytes[0:4]
 
+	// process client's port number
 	portBytes := make([]byte, 2)
 	binary.LittleEndian.PutUint16(portBytes, port)
+
+	// introduce uniqueness
 	randBytes := make([]byte, 2)
 	rand.Read(randBytes)
+
+	// process time of day
 	timeBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(timeBytes, uint64(time.Now().UnixNano()))
 
@@ -115,15 +124,11 @@ func getmsgID(clientIP string, port uint16) []byte {
  */
 func verifyChecksum(msg *pb.InternalMsg) bool {
 	// Verify MessageID is as expected
-	if uint64(util.ComputeChecksum((*msg).MessageID, (*msg).Payload)) != (*msg).CheckSum {
-		return false
-	}
-	return true
+	return uint64(util.ComputeChecksum((*msg).MessageID, (*msg).Payload)) == (*msg).CheckSum
 }
 
 /**
 * Writes a message to the connection.
-* @param conn The connection object to send the message over.
 * @param addr The IP address to send to.
 * @param msg The message to send.
  */
@@ -142,8 +147,6 @@ func writeMsg(addr net.Addr, msg []byte) {
 	_, err := (*conn).WriteTo(msg, addr)
 	if err != nil {
 		log.Println(err)
-	} else {
-		// log.Println("INFO:", n, "bytes written.")
 	}
 }
 
@@ -157,18 +160,20 @@ func writeMsg(addr net.Addr, msg []byte) {
  */
 func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id uint32, isInternal bool) {
 
+	// serialize and add to resCache
 	serMsg, err := cacheUDPResponse(msgID, payload, internal_id, isInternal, true)
 	if err != nil {
 		log.Println(err)
 		return
 	}
+
+	writeMsg(addr, serMsg)
+
 	/**************DEBUGGING*******************
 	if isInternal {
 		log.Println("Sending UDP response for msg with msgID", msgID, "internal id ", internal_id, "to", addr.String())
 	}
 	******************************************/
-
-	writeMsg(addr, serMsg)
 }
 
 /**
@@ -178,8 +183,10 @@ func sendUDPResponse(addr net.Addr, msgID []byte, payload []byte, internal_id ui
 * @param internal_id The internal message id.
  */
 func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
+
 	checksum := util.ComputeChecksum(msgID, nil)
 
+	// construct message
 	resMsg := &pb.InternalMsg{
 		MessageID:  msgID,
 		Payload:    nil,
@@ -187,6 +194,8 @@ func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
 		InternalID: internal_id,
 		IsResponse: true,
 	}
+
+	// serialize
 	serMsg, err := proto.Marshal(resMsg)
 	if err != nil {
 		log.Println(err)
@@ -197,7 +206,6 @@ func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
 
 /**
 * Cache a UDP request message and return the serialized message.
-* @param addr The IP address to send to.
 * @param msgID The message id.
 * @param payload The message payload.
 * @param internal_id The internal message id.
@@ -207,8 +215,10 @@ func sendUDPAck(addr net.Addr, msgID []byte, internal_id uint32) {
 * @return an error in case of failure
  */
 func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isInternal bool, isReady bool) ([]byte, error) {
+
 	checksum := util.ComputeChecksum(msgID, payload)
 
+	// construct message
 	resMsg := &pb.InternalMsg{
 		MessageID: msgID,
 		Payload:   payload,
@@ -221,6 +231,7 @@ func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isIntern
 		resMsg.IsResponse = true
 	}
 
+	// serialize
 	serMsg, err := proto.Marshal(resMsg)
 	if err != nil {
 		return nil, err
@@ -234,14 +245,15 @@ func cacheUDPResponse(msgID []byte, payload []byte, internal_id uint32, isIntern
 
 /*
 * Forwards and caches a response.
-* @param conn The connection object to send messages over.
 * @param addr The address to send the message to.
 * @param resMsg The message to send.
 * @param isInternal True if the response is being sent to another server node, false if being sent to a client.
  */
 func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) {
-	// Remove internal fields if forwarding to a client
-	if isInternal == false {
+	// Remove internal fields if forwarding to a client (external message)
+	if !isInternal {
+
+		// construct message
 		resMsg = &pb.InternalMsg{ // TODO: may need to change this to type pb.Msg
 			MessageID: resMsg.MessageID,
 			Payload:   resMsg.Payload,
@@ -254,6 +266,7 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 		**************************************/
 	}
 
+	// serialize
 	serMsg, err := proto.Marshal(resMsg)
 	if err != nil {
 		log.Println(err)
@@ -267,12 +280,14 @@ func forwardUDPResponse(addr net.Addr, resMsg *pb.InternalMsg, isInternal bool) 
 
 /*
 * Forwards and caches the request
-* @param conn The connection object to send messages over.
 * @param addr The address to send the message to.
 * @param returnAddr The address to forward the response to, nil if the response shouldn't be forwarded.
 * @param reqMsg The message to send.
+* @param isForwardedChainUpdate flag to monitor if request is an update within a chain
  */
 func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.InternalMsg, isForwardedChainUpdate bool) {
+
+	// flag to monitor if message has been routed before
 	isFirstHop := false
 
 	// Update ID if we are forwarding an external request
@@ -281,10 +296,12 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 		isFirstHop = true
 	}
 
+	// Update ID if we are forwarding an a chain update
 	if isForwardedChainUpdate {
 		reqMsg.InternalID = FORWARDED_CHAIN_UPDATE_REQ
 	}
 
+	// serialize
 	serMsg, err := proto.Marshal(reqMsg)
 	if err != nil {
 		log.Println(err)
@@ -295,6 +312,7 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 		// No need to cache serialized message if is a client request since client responsible for retries
 		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), nil, addr, returnAddr, isFirstHop)
 	} else {
+		// cache normally for all other requests
 		putReqCacheEntry(string(reqMsg.MessageID), uint8(reqMsg.InternalID), serMsg, addr, returnAddr, isFirstHop)
 	}
 
@@ -303,7 +321,6 @@ func forwardUDPRequest(addr *net.Addr, returnAddr *net.Addr, reqMsg *pb.Internal
 
 /**
 * Processes a request message and either forwards it or handles it at this node.
-* @param conn The connection object to send messages over.
 * @param returnAddr The IP address to send response to.
 * @param reqMsg The incoming message.
 * @param externalReqHandler The message handler callback for external messages (msgs passed to app layer).
@@ -312,13 +329,16 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 	//DEBUGGING
 	// log.Println("Received request of type", reqMsg.GetInternalID(), "from", returnAddr.String())
 
-	// Check if response is already cached
+	//  get response corresponding to message ID from the resCache
 	resCache_.lock.Lock()
 	res := resCache_.data.Get(string(reqMsg.MessageID))
 	resCache_.lock.Unlock()
+
+	// Check if response is already cached
 	if res != nil {
 		resCacheEntry := res.(ResCacheEntry)
 		log.Println("Found response for", reqMsg.MessageID, "in resCache")
+
 		if resCacheEntry.isReady {
 			if reqMsg.GetAddr() != nil {
 				log.Println("Sending cached reply to", reqMsg.GetAddr().String())
@@ -353,20 +373,29 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 		}
 		return
 	}
+
 	if reqMsg.GetAddr() == nil {
 		reqMsg.Addr = util.CreateAddressStringFromAddr(&returnAddr)
 	}
+
 	ProcessExternalRequest(reqMsg, returnAddr)
 
 }
 
+/**
+* Processes an external request message and either forwards it or handles it at this node.
+* @param reqMsg The incoming message.
+* @param messageSender The node to which the request is forwarded.
+ */
 func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	returnAddr := reqMsg.GetAddr()
+
 	fwdAddr, respondToClient, payload, err := getExternalReqHandler()(messageSender, reqMsg)
 	if err != nil {
 		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
 		return
 	}
+	// check if request is a forwarded client request (external)
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// acknowledge forwarded client request
 		log.Println("Acknowledging forwarded client request  to server", messageSender.String())
@@ -374,6 +403,8 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 		// NOTE: we need to use same ID for responses for now to identify the requests in the request cache
 		sendUDPAck(messageSender, reqMsg.MessageID, FORWARDED_CLIENT_REQ)
 	}
+
+	// forward or respond to the request
 	if respondToClient {
 		// Send response to client
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, false)
@@ -384,15 +415,24 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	}
 }
 
+/**
+* Generate response to a chain request.
+* @param fwdAddr chain head's address.
+* @param respondAddr node's address to respond to (if this is the chain's tail).
+* @param isTail indicator if this node is a chain's tail.
+ */
 func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool, reqMsg *pb.InternalMsg, payload []byte) {
 	/************DEBUGGING****************/
 	res := &pb.KVResponse{}
 	proto.Unmarshal(payload, res)
 	/**************************************/
+
 	isForwardedChainUpdate := reqMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ
+
 	if isTail {
 		log.Println("Sending response to client", reqMsg.GetAddr().String(), "for value", kvstore.BytetoInt(res.GetValue()))
 		sendUDPResponse(reqMsg.GetAddr(), reqMsg.MessageID, payload, reqMsg.InternalID, false)
+
 		if isForwardedChainUpdate {
 			//respond to forwarded chain update
 			log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
@@ -410,27 +450,25 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool
 			forwardUDPRequest(fwdAddr, nil, reqMsg, true)
 		}
 	}
-
 }
 
 /**
 * Processes a response message.
-* @param conn The connection object to send messages over.
 * @param addr The IP address to send response to.
 * @param serialMsg The incoming message.
 * @param handler The message handler callback.
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 
-	// DEADLOCKS HERE after updateSuccessor() sometimes (never unlocks)
-
 	//util.PrintInternalMsg(resMsg)
+
 	// Get cached request (ignore if it's not cached)
 	reqCache_.lock.Lock()
 	key := string(resMsg.MessageID) + strconv.Itoa(int(resMsg.InternalID))
 	req := reqCache_.data.Get(key)
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
+
 		/************DEBUGGING****************
 		res := &pb.KVResponse{}
 		proto.Unmarshal(resMsg.Payload, res)
@@ -445,6 +483,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		}
 
+		// update resCache if chain update request
 		if resMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ {
 			//update the cache to make request available
 			//assumes no failure!!!
@@ -455,6 +494,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 			}
 		}
 
+		// handle response
 		getInternalResHandler()(senderAddr, resMsg)
 
 		// TODO: message handler for internal client requests w/o a return address (PUT requests during transfer)
@@ -484,13 +524,15 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
  */
 // NOTE: this will be used for sending internal messages
 func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
+	// extract IP and port number
 	ip := (*conn).LocalAddr().(*net.UDPAddr).IP.String()
 	port := (*conn).LocalAddr().(*net.UDPAddr).Port
 
+	// generate unique message ID and checksum
 	msgID := getmsgID(ip, uint16(port))
-
 	checksum := util.ComputeChecksum(msgID, payload)
 
+	// construct request message
 	reqMsg := &pb.InternalMsg{
 		MessageID:  msgID,
 		Payload:    payload,
@@ -499,6 +541,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 		IsResponse: false,
 	}
 
+	// serialize
 	serMsg, err := proto.Marshal(reqMsg)
 	if err != nil {
 		log.Println(err)
@@ -515,8 +558,6 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 
 /**
 * Listens for incoming messages, processes them, and then passes them to the handler callback.
-* @param conn The network connection object.
-* @param externalReqHandler The external request handler callback.
 * @return An error message if failed to read from the connection.
  */
 func MsgListener() error {
@@ -544,6 +585,7 @@ func MsgListener() error {
 			continue
 		}
 
+		// process based on message type
 		if msg.IsResponse {
 			go processResponse(senderAddr, msg)
 		} else {

@@ -8,7 +8,8 @@ import (
 )
 
 /*
- * Getters and setters for internal (server-server) and external (client-server) request-response handlers
+ * Internal (server-server) and external (client-server) request-response handlers
+ * Getters and Setters for the handlers
  */
 
 type externalReqHandlerFunc func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error)
