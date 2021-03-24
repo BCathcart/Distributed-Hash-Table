@@ -10,7 +10,6 @@ import (
 	"time"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"google.golang.org/protobuf/proto"
 )
@@ -383,24 +382,26 @@ func processRequest(returnAddr net.Addr, reqMsg *pb.InternalMsg) {
 }
 
 /**
-* Processes an external request message and either forwards it or handles it at this node.
+* Processes an external request message and routes to the correct node as needed.
 * @param reqMsg The incoming message.
-* @param messageSender The node to which the request is forwarded.
+* @param messageSender The node to which an acknowledgement is sent.
  */
 func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	returnAddr := reqMsg.GetAddr()
 
+	//ExternalReqHandler returns a forward address if the request is to be forwarded
+	//to another node and a response payload for any non-kvrequest
+	//key-value requests are passed to the chain replication layer and queued so
+	//no payload
 	fwdAddr, respondToClient, payload, err := getExternalReqHandler()(messageSender, reqMsg)
 	if err != nil {
-		log.Println("WARN could not handle message. Sender = " + returnAddr.String())
+		log.Println("WARN: could not handle message. Sender = " + returnAddr.String())
 		return
 	}
 	// check if request is a forwarded client request (external)
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// acknowledge forwarded client request
-		log.Println("Acknowledging forwarded client request  to server", messageSender.String())
-		// sendUDPAck(messageSender, reqMsg.MessageID, FORWARD_ACK_RES)
-		// NOTE: we need to use same ID for responses for now to identify the requests in the request cache
+		// log.Println("Acknowledging forwarded client request  to server", messageSender.String())
 		sendUDPAck(messageSender, reqMsg.MessageID, FORWARDED_CLIENT_REQ)
 	}
 
@@ -410,16 +411,18 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, false)
 	} else if fwdAddr != nil {
 		// Forward request if key doesn't correspond to this node:
-		log.Println("Forwarding client request with msgID", reqMsg.MessageID, "to", (*fwdAddr).String())
+		// log.Println("Forwarding client request with msgID", reqMsg.MessageID, "to", (*fwdAddr).String())
 		forwardUDPRequest(fwdAddr, nil, reqMsg, false)
 	}
 }
 
 /**
 * Generate response to a chain request.
-* @param fwdAddr chain head's address.
-* @param respondAddr node's address to respond to (if this is the chain's tail).
-* @param isTail indicator if this node is a chain's tail.
+* @param fwdAddr the node to forward the request to.
+* @param respondAddr node's address to respond to (if this is an intermediate node or the tail).
+* @param isTail indicator if this node is the tail of the chain corresponding the request key.
+* @param reqMSg the request message used for constructing the response.
+* @param payload the payload of the response message.
  */
 func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool, reqMsg *pb.InternalMsg, payload []byte) {
 	/************DEBUGGING****************/
@@ -430,12 +433,15 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool
 	isForwardedChainUpdate := reqMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ
 
 	if isTail {
-		log.Println("Sending response to client", reqMsg.GetAddr().String(), "for value", kvstore.BytetoInt(res.GetValue()))
+		// DEBUGGING
+		// log.Println("Sending response to client", reqMsg.GetAddr().String(), "for value", kvstore.BytetoInt(res.GetValue()))
+
+		// The client's address is stored in the address field of the message
 		sendUDPResponse(reqMsg.GetAddr(), reqMsg.MessageID, payload, reqMsg.InternalID, false)
 
 		if isForwardedChainUpdate {
 			//respond to forwarded chain update
-			log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
+			// log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
 			sendUDPResponse(*respondAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
 		}
 	} else if isForwardedChainUpdate {
