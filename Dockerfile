@@ -14,4 +14,3 @@ ENV GOTRACEBACK=single
 WORKDIR /src
 COPY --from=build /out/dht-server .
 COPY --from=build /etc/cpen431/peers.txt /etc/cpen431/peers.txt
-ENTRYPOINT [ "./dht-server" ]
