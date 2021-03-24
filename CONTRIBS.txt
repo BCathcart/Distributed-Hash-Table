@@ -1,9 +1,6 @@
 BRENNAN
 - Initial membership/gossiping/failure detection design
 - Request/reply layer
-- Replica transfers when a node's successor updates
-- Bootstrapping protocol
-- Much debug
 ROZHAN
 - Refactored code
 - Docker setup
@@ -11,6 +8,8 @@ ROZHAN
 Thomas
 - Membership
 - Consistent hashing
+- Integration / unit tests
+- Update predecessor
 Shay
 - robust transfer service, retries (pushed to milestone3) 
 - testing
