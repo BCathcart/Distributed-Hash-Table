@@ -21,28 +21,31 @@ const STATUS_UNAVAILABLE = 0x3
 
 const HEARTBEAT_INTERVAL = 1000 // ms
 
-// Maps msg ID to serialized response
-var memberStore_ *MemberStore
+var memberStore_ *MemberStore /* Structure to hold all membership info */
 
 /* MUST be holding member store lock */
 func getKeyOfNodeTransferringTo() *uint32 {
-	// memberStore_.lock.RLock()
 	if memberStore_.transferNodeAddr == nil {
-		// memberStore_.lock.RUnlock()
 		return nil
 	} else {
 		ret := memberStore_.getKeyFromAddr(memberStore_.transferNodeAddr)
-		// memberStore_.lock.RUnlock()
 		return ret
 	}
 }
 
+/*
+ * Gets the address of the head and tail nodes in the chain where the key is replicated.
+ * @param key
+ * @return The head address
+ * @return The tail address
+ * @return Error retrieving the head, nil if success
+ * @return Error retrieving the tail, nil if success
+ */
 func GetHeadTailAddr(key uint32) (*net.Addr, *net.Addr, error, error) {
 	memberStore_.lock.RLock()
-	// transferNdAddr := memberStore_.transferNodeAddr
 	transferRcvNdKey := getKeyOfNodeTransferringTo()
 
-	head, pos := searchForSuccessor(key, transferRcvNdKey) //TODO transferRcvNdKey?
+	head, pos := searchForSuccessor(key, transferRcvNdKey)
 
 	tail, _ := searchForTail(pos)
 	memberStore_.lock.RUnlock()
@@ -147,7 +150,9 @@ func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
 	}
 }
 
-// When a member is found to be unavailable, remove it from the member list
+/*
+ * When a member is found to be unavailable, remove it from the member list
+ */
 func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
 	memberStore_.lock.Lock()
@@ -155,6 +160,9 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
 }
 
+/*
+ * Initializes the membership layer
+ */
 func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int32) {
 	memberStore_ = NewMemberStore()
 

@@ -33,7 +33,6 @@ func NewMemberStore() *MemberStore {
  */
 /* MUST be holding write lock */
 func (ms *MemberStore) sortAndUpdateIdx() {
-	// ms.lock.Lock()
 	sort.SliceStable(ms.members, func(i, j int) bool {
 		return ms.members[i].Key < ms.members[j].Key
 	})
@@ -42,12 +41,9 @@ func (ms *MemberStore) sortAndUpdateIdx() {
 	for i := range ms.members {
 		if ms.members[i].Key == ms.mykey {
 			ms.position = i
-			// ms.lock.Unlock()
 			return
 		}
 	}
-
-	// ms.lock.Unlock()
 
 	// Should never get here!
 	log.Println("Error: could not find own key in member array")
@@ -70,14 +66,11 @@ func (ms *MemberStore) getKeyFromAddr(addr *net.Addr) *uint32 {
 /* Finds index in membership list of a key
 Currently does not lock/unlock, assuming precondition of MemberStore lock being held */
 func (ms *MemberStore) findKeyIndex(key uint32) int {
-	// ms.lock.RLock()
 	for i := range ms.members {
 		if ms.members[i].Key == key {
-			// memberStore_.lock.RUnlock()
 			return i
 		}
 	}
-	// memberStore_.lock.RUnlock()
 	return -1
 }
 
@@ -87,11 +80,9 @@ func (ms *MemberStore) findIPPortIndex(ip string, port int32) int {
 	for i := range ms.members {
 		if string(ms.members[i].GetIp()) == ip &&
 			ms.members[i].GetPort() == port {
-			// memberStore_.lock.RUnlock()
 			return i
 		}
 	}
-	// memberStore_.lock.RUnlock()
 	return -1
 }
 
@@ -115,8 +106,10 @@ func (ms *MemberStore) getCurrMember() *pb.Member {
 	return member
 }
 
-// get a random STATUS_NORMAL member from the memberstore
-// return nil if there is no other valid member
+/*
+ * Returns a random STATUS_NORMAL member from the memberstore
+ * @return A member or nil if there is no other valid member
+ */
 func (ms *MemberStore) getRandMember() *pb.Member {
 	//pick a node at random to gossip to
 	var member *pb.Member
