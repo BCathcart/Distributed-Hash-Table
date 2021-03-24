@@ -2,6 +2,9 @@ BRENNAN
 - Initial membership/gossiping/failure detection design
 - Request/reply layer
 ROZHAN
+- Chain replication routing and response handling
+- request/reply layer modifications
+- passing predecessor and successors from the memberstore
 - Refactored code
 - Docker setup
 - Gossiping
