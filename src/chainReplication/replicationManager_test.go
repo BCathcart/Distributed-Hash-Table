@@ -8,6 +8,10 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
+/**
+This test suite covers different scenarios for changes to predecessor nodes that the updatePredecessor
+function might encounter.
+*/
 const MOCK_IP = "86.192.0.170"
 
 type transferCall struct {
@@ -17,8 +21,7 @@ type transferCall struct {
 }
 
 type sweeperCall struct {
-	lowKey  uint32
-	highKey uint32
+	keys util.KeyRange
 }
 
 // Spies to keep track of function calls during testing
@@ -34,9 +37,9 @@ func mockTransfer(addr *net.Addr, coordAddr *net.Addr, keys util.KeyRange) {
 	log.Printf("Called Transfer function with range %v, addr, %v\n", keys, (*addr).String())
 }
 
-func mockSweeper(lowKey uint32, highKey uint32) {
-	sweeperCalls = append(sweeperCalls, sweeperCall{lowKey: lowKey, highKey: highKey})
-	log.Printf("Called Sweeper function with range [%v, %v]\n", lowKey, highKey)
+func mockSweeper(keyRange util.KeyRange) {
+	sweeperCalls = append(sweeperCalls, sweeperCall{keyRange})
+	log.Printf("Called Sweeper function with range [%v, %v]\n", keyRange.Low, keyRange.High)
 }
 
 func mostRecentTransfer() transferCall {
@@ -126,8 +129,7 @@ func TestPredecessorsThirdJoined(t *testing.T) {
 	beforeLen := len(sweeperCalls)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 	expected := sweeperCall{
-		highKey: newPredecessors[2].keys.High,
-		lowKey:  newPredecessors[2].keys.Low,
+		keys: util.KeyRange{High: newPredecessors[2].keys.High, Low: newPredecessors[2].keys.Low},
 	}
 	if len(sweeperCalls) != beforeLen+1 {
 		t.Errorf("Error: did not sweep cache")
@@ -166,8 +168,7 @@ func TestPredecessorsSecondJoined(t *testing.T) {
 	beforeLen := len(sweeperCalls)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 	expected := sweeperCall{
-		highKey: predecessors[1].keys.High,
-		lowKey:  predecessors[1].keys.Low,
+		keys: util.KeyRange{High: predecessors[1].keys.High, Low: predecessors[1].keys.Low},
 	}
 	if len(sweeperCalls) != beforeLen+1 {
 		t.Errorf("Error: did not sweep cache")
@@ -188,6 +189,7 @@ func TestPredecessorsSecondJoined(t *testing.T) {
 	}
 }
 
+// TODO: Update tests to match new code
 func TestPredecessorsSecondFailed(t *testing.T) {
 	newPredecessors := setupPredecessors()
 
@@ -229,8 +231,7 @@ func TestPredecessorsFirstJoined(t *testing.T) {
 	beforeLen := len(sweeperCalls)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
 	expected := sweeperCall{
-		highKey: predecessors[1].keys.High,
-		lowKey:  predecessors[1].keys.Low,
+		keys: util.KeyRange{High: predecessors[1].keys.High, Low: predecessors[1].keys.Low},
 	}
 	if len(sweeperCalls) != beforeLen+1 {
 		t.Errorf("Error: did not sweep cache")
@@ -252,9 +253,10 @@ func TestPredecessorsFirstJoined(t *testing.T) {
 	}
 }
 
+// TODO: Update tests to match new code
 func TestPredecessorsFirstFailed(t *testing.T) {
+	log.Printf("Before running tests %v", expectedTransfers)
 	newPredecessors := setupPredecessors()
-
 	newPredecessors[0] = shallowCopy(predecessors[1])
 	newPredecessors[1] = shallowCopy(predecessors[2])
 	newPredecessors[2].keys.High = predecessors[2].keys.Low
@@ -262,8 +264,10 @@ func TestPredecessorsFirstFailed(t *testing.T) {
 
 	beforeLen := len(expectedTransfers)
 	checkPredecessors(newPredecessors, mockTransfer, mockSweeper)
+	log.Println("EXPECTED TRANSFERS")
+	log.Println(expectedTransfers)
 	if len(expectedTransfers) != beforeLen+1 {
-		t.Errorf("Error: did not append to receiving transfers")
+		t.Errorf("Error: incorrect expected transfer len expected %v got %v", beforeLen+1, len(expectedTransfers))
 	}
 
 	expected := transferCall{
