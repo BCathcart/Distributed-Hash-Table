@@ -12,6 +12,13 @@ import (
 )
 
 // TRANSFER_REQ internal msg type
+/*
+ * Sends a request to initiate a data transfer with its successor (the receiver of the transfer).
+ *
+ * @param succAddr The address of the successor.
+ * @param coorAddr The coordinator for the key range being transferred.
+ * @param keys The key range to transfer.
+ */
 func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRange) {
 	if succAddr == nil {
 		log.Println("ERROR: Successor address should not be nil")
@@ -25,18 +32,23 @@ func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRa
 	requestreply.SendTransferReq(payload, succAddr)
 }
 
-// TRANSFER_REQ internal msg type
+/*
+ * Responds to the transfer intiator if the transfer is expected. Drops the message otherwise.
+ *
+ * @param msg The transfer request message.
+ * @return The payload for the response message.
+ * @return True if a response should be sent, false otherwise
+ */
 func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
 	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("\nRECEIVING TRANSFER REQUEST FOR ", (*addr).String())
+	log.Println("RECEIVING TRANSFER REQUEST FOR ", (*addr).String())
 
 	// ACK if the address in in expectedTransfers
 	// i.e. we are expecting the transfer
-	// This ensures the transfer only happens when both parties
-	// are ready
+	// This ensures the transfer only happens when both parties are ready
 
 	if msg.Payload == nil {
 		log.Println("ERROR: HandleTransferReq - Coordinator address can't be null")
@@ -46,7 +58,7 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	// Check if the transfer is expected
 	for _, transfer := range expectedTransfers {
 		if util.CreateAddressStringFromAddr(transfer.coordinator) == string(msg.Payload) {
-			log.Print("\nTRANSFER IS EXPECTED!\n")
+			log.Println("INFO: TRANSFER IS EXPECTED!")
 			transfer.timer.Reset(15 * time.Second) // Reset timer
 			return msg.Payload, true
 		}
@@ -64,13 +76,18 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
 	return nil, false
 }
 
-// TRANSFER_RES internal msg
+/*
+ * Starts the transfer to the accepting receiver.
+ *
+ * @param sender The address of the sender who acknowledged the transfer request.
+ * @param msg The transfer request ACK message.
+ */
 func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
 	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("\nRECEIVING TRANSFER ACK FOR ", (*addr).String())
+	log.Println("RECEIVING TRANSFER ACK FOR ", (*addr).String())
 
 	if msg.Payload == nil {
 		log.Println("ERROR: HandleDataTransferRes - Coordinator address can't be null")
@@ -87,7 +104,7 @@ func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 
 			// Start the transfer
 			go transferService.TransferKVStoreData(transfer.receiver, transfer.keys.Low, transfer.keys.High, func() {
-				log.Println("\n SENDING TRANSFER FINISHED FOR ", (*transfer.coordinator).String(), (*transfer.receiver).String())
+				log.Println("SENDING TRANSFER FINISHED FOR ", (*transfer.coordinator).String(), (*transfer.receiver).String())
 				requestreply.SendTransferFinished(util.SerializeAddr(transfer.coordinator), transfer.receiver)
 			})
 			return
@@ -102,13 +119,17 @@ func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
 	}
 }
 
-// TRANSFER_FINISHED_MSG internal msg type
+/*
+ * Removes the finished transfer from the expected transfer array.
+ *
+ * @param msg The received TRANSFER_FINISHED message.
+ */
 func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
 	coorAddr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("\nRECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
+	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
 
 	removed := removeExpectedTransfer(coorAddr)
 

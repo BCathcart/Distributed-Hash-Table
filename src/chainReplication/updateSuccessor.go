@@ -7,6 +7,13 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
+/*
+ * Updates the successor if it has changed and updates the pending and expected transfers accordingly.
+ *
+ * @param succAddr The current successor member's address
+ * @param minKey The start of the successor's key range
+ * @param maxKey The end of the successor's key range
+ */
 func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
@@ -18,7 +25,7 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		}
 
 		successor = nil
-		log.Println("Warn: Setting address to nil")
+		log.Println("WARN: Setting address to nil")
 		return
 	}
 
@@ -29,14 +36,14 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 	// No transfer is needed when the node bootstraps (successor will already have a copy of the keys)
 	// ASSUMPTION: first node won't receive keys before the second node is launched
 	if successor == nil {
-		log.Print("\n\n\nUPDATE SUCCESSOR FIRST TIME\n\n\n")
+		log.Println("INFO: UPDATING SUCCESSOR FOR FIRST TIME")
 		successor = &successorNode{succAddr, util.KeyRange{minKey, maxKey}}
 		return
 	}
 
 	// Ignore if information is the same
 	if util.CreateAddressStringFromAddr(successor.addr) != util.CreateAddressStringFromAddr(succAddr) {
-		log.Print("\n\n\nUPDATE SUCCESSOR\n\n\n")
+		log.Print("INFO: UPDATING SUCCESSOR")
 
 		// Clear pending transfers to the old successor
 		removePendingTransfersToAMember(successor.addr)
@@ -48,7 +55,7 @@ func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
 		if isNewMember {
 			// If the new successor joined, need to transfer your keys and first predecessor's keys
 
-			log.Println("IS_NEW_MEMBER")
+			log.Println("INFO: The successor is a new member")
 
 			// Transfer this server's keys to the new successor
 			sendDataTransferReq(succAddr, MyAddr, MyKeys)

@@ -134,11 +134,11 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 	}
 	PrintKeyChange(newPredecessors)
 
-	log.Println("\n\nNEW PREDECESSOR", pred1Equal, pred2Equal, pred3Equal)
+	log.Println("INFO: NEW PREDECESSOR", pred1Equal, pred2Equal, pred3Equal)
 
 	// If we newly joined, expect to receive keys
 	if newPred1 != nil && oldPred1 == nil && newPred2 != nil && oldPred2 == nil {
-		log.Print("\n\n EXPECTING TO RECEIVE KEYS FROM PREDECESSORS AFTER BOOTSTRAP\n")
+		log.Println("INFO: EXPECTING TO RECEIVE KEYS FROM PREDECESSORS AFTER BOOTSTRAP")
 		addExpectedTransfer(newPred1.addr)
 		addExpectedTransfer(newPred2.addr)
 		return
@@ -150,7 +150,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		between the second and third predecessor.
 	*/
 	if pred1Equal && pred2Equal {
-		log.Print("\n\n THIRD PREDECESSOR HAS CHANGED\n")
+		log.Println("INFO: THIRD PREDECESSOR HAS CHANGED")
 
 		// New node has joined
 		if newPred3 != nil && newPred2 != nil && (oldPred3 == nil || util.BetweenKeys(newPred2.keys.Low, oldPred2.keys.Low, oldPred2.keys.High)) {
@@ -161,7 +161,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			}
 		}
 	} else if pred1Equal {
-		log.Print("\n\n SECOND PREDECESSOR HAS CHANGED\n")
+		log.Println("INFO: SECOND PREDECESSOR HAS CHANGED")
 
 		/*
 			First predecessor is the same, second is different. This could mean
@@ -175,10 +175,10 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		if oldPred2 == nil || newPred2 == nil {
 			return
 		} else if comparePredecessors(newPred3, oldPred2) { // New node joined
-			log.Print("\n\nNEW SECOND PREDECESSOR JOINED\n")
+			log.Println("INFO: NEW SECOND PREDECESSOR JOINED")
 			sweepCache(oldPred2.keys)
 		} else if comparePredecessors(newPred2, oldPred3) { // P2 Failed. Will be receiving keys from p1 for new p2
-			log.Print("\n\n SECOND PREDECESSOR FAILED\n\n")
+			log.Println("INFO: SECOND PREDECESSOR FAILED")
 			addExpectedTransfer(newPred2.addr)
 			if oldPred2 != nil && oldPred1 != nil {
 				log.Printf("TRANSFERRING KEYS TO SUCC %v", (*successor.addr).String())
@@ -189,7 +189,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 		}
 
 	} else { // First predecessor node has changed.
-		log.Print("\n\n FIRST PREDECESSOR HAS CHANGED\n")
+		log.Println("INFO: FIRST PREDECESSOR HAS CHANGED")
 
 		// If there's no first predecessor, there can only be one node in the system - not enough
 		// for a full chain, so nothing needs to be done in terms of replication.
@@ -197,13 +197,13 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			return
 		}
 		if util.BetweenKeys(newPred1.keys.High, oldPred1.keys.High, MyKeys.High) { // New node has joined
-			log.Print("\n\n NEW FIRST PREDECESSOR HAS JOINED\n")
+			log.Println("INFO: NEW FIRST PREDECESSOR HAS JOINED")
 
 			if oldPred2 != nil {
 				sweepCache(oldPred2.keys)
 			}
 		} else if comparePredecessors(oldPred2, newPred1) { // Node 1 has failed, node 2 is still running
-			log.Print("\n\n FIRST PREDECESSOR FAILED\n")
+			log.Print("INFO: FIRST PREDECESSOR FAILED")
 
 			// GOT EXCEPTION HERE
 			if newPred2 != nil {
@@ -220,7 +220,7 @@ func checkPredecessors(newPredecessors [3]*predecessorNode, transferKeys transfe
 			// TODO: Should also transfer keys between (newPredKey3, oldPredKey2). With
 			// 	our current architecture this is not possible since we do not yet have those keys.
 			//  This should be very rare so may not need to be handled, as the churn is expected to be low.
-			log.Println("TWO NODES FAILED SIMULTANEOUSLY.")
+			log.Println("WARN: TWO NODES FAILED SIMULTANEOUSLY.")
 		} else {
 			UnhandledScenarioError(newPredecessors)
 		}
@@ -259,8 +259,6 @@ func UnhandledScenarioError(newPredecessors [3]*predecessorNode) {
 			log.Println(newPredecessors[i].keys)
 		}
 	}
-	log.Println("UNHANDLED SCENARIO")
-
 }
 
 /*
