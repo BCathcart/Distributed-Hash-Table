@@ -466,6 +466,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 	reqCache_.lock.Lock()
 	key := string(resMsg.MessageID) + strconv.Itoa(int(resMsg.InternalID))
 	req := reqCache_.data.Get(key)
+	reqCache_.lock.Unlock()
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
 
@@ -503,8 +504,9 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		// Otherwise simply remove the message from the queue
 		// Note: We don't need any response handlers for now
 		// TODO: Possible special handling for TRANSFER_FINISHED_MSG and MEMBERSHIP_REQ
+		reqCache_.lock.Lock()
 		reqCache_.data.Delete(key)
-
+		reqCache_.lock.Unlock()
 	} else {
 		log.Println("WARN: Received response for unknown request of type", resMsg.InternalID)
 		/************DEBUGGING***************
@@ -513,7 +515,6 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		log.Println("WARN: Received response", resMsg.IsResponse, "of type", resMsg.InternalID, "for unknown request with msgID", resMsg.MessageID, "from", senderAddr.String(), "for value", kvstore.BytetoInt(res.GetValue()))
 		***************************************/
 	}
-	reqCache_.lock.Unlock()
 }
 
 /*
