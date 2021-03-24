@@ -87,7 +87,7 @@ NOTE: When we heard there would be “low churn”, we incorrectly assumed this 
 - Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which then forwards them up the chain
 - GET requests are sent to the tail
 - All other client requests are handled at the receiving
-- TODO(Rozsa): add details
+- TODO(Rozsa): add more details
 
 ## Integration Testing
 - To help test our code, we extended the client from the individual programming assignments.
