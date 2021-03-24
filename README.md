@@ -84,10 +84,16 @@ NOTE: When we heard there would be “low churn”, we incorrectly assumed this 
     - These scenarios above are also tested in the replicationManager_test file
 
 ## Chain Replication - routing
-- Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which then forwards them up the chain
-- GET requests are sent to the tail
-- All other client requests are handled at the receiving
-- TODO(Rozsa): add more details
+- Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which performs the update and then forwards it up the chain
+- GET requests are routed to the tail. The tail node then responds to the client directly, and sends the response back down the chain, which gets 
+- forwarded back to the tail.
+- All other client requests (that are not key-value requests) are handled at the receiving node.
+
+## Sequential Consistency
+- In order to achieve sequential consistency, updates and GET requests that are routed to each node are queued and processed in order of receipt. However, the current design does not guarrantee that update requests reach the successor in the same order and arbitrary communication delays could cause violations to sequential consistency. 
+- Note:
+- To remedy this, a modified protocol was implemented in m2-responsehandling in which the head node waits for a response from the tail (which is routed through the seond node in the chain) that it has received the update before proceeding with the next update. If any node in the chain fails to process the request or the head does not receive a response within a specified timeout period, the head node reverses the update operation and moves on to the next request. The second node in the chain behaves similarly if it does not receive a response from the tail.
+- Due to insufficient testing, this modification was not included in the milestone2 submission. 
 
 ## Integration Testing
 - To help test our code, we extended the client from the individual programming assignments.
