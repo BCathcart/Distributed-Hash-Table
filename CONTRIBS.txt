@@ -12,5 +12,5 @@ Thomas
 - Membership
 - Consistent hashing
 Shay
-- Transfer service
-- KVstore helpers
+- robust transfer service, retries (pushed to milestone3) 
+- testing
