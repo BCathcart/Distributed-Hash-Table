@@ -1,9 +1,6 @@
 # miniproject
 The CPEN 431 Mini-Project - DHT using Consistent Hashing Test Edit
 
-# miniproject
-The CPEN 431 Mini-Project - DHT using Consistent Hashing Test Edit
-
 ### Team Members
 Name | github user
 ------------ | -------------
@@ -68,24 +65,33 @@ type ReqCacheEntry struct {
 }
 ```
 
-## Data Replication - general design
+## Chain Replication - general design
 - For M2, our design uses chain replication
   - To maintain a replication factor of 3, keys that belong to a node will also be replicated at the next 2 nodes.
   - To ensure that the data is being replicated correctly through the chain, the last node in the chain will respond to the client.
   - In the chainReplication package, each node will keep track of its three predecessors (the first three nodes before 
     a node in the ring) and one successor (the first node after a node in the ring). 
     - This allows the nodes to detect changes to the keyspace (failures or new nodes)
-## Data Replication - handling keyspace changes 
+
+NOTE: When we heard there would be “low churn”, we incorrectly assumed this meant it was highly unlikely multiple nodes would fail at the same time. With our current design, there is a chance data is lost if two nodes in the same chain fail at the exact same time. Right now we have a push-based system, but we plan to switch to a pull-based system for M3 where each node keeps track of which keyspace it has (including replicas) and hounds their predecessor for a transfer if the keyspace they're responsible for replicating grows.
+
+## Chain Replication - handling keyspace changes 
 - When a node detects changes to its predecessors / successors, the updatePredecessor and updateSuccessor functions 
   will determine the appropriate course of action based on the node's relative position to the new / failed node.
     - In general, a failed predecessor / successor node means that our node will need to transfer some of its keys to a successor node, in order to maintain
       a replication factor of 3. A new predecessor / successor node joining means that the node is no longer responsible for some of its keys and should remove them from its store.
     - All scenarios and corresponding actions are listed here: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
-    - These scenarios above are also tested in the replicationManager_test file 
+    - These scenarios above are also tested in the replicationManager_test file
+
+## Chain Replication - routing
+- Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which then forwards them up the chain
+- GET requests are sent to the tail
+- All other client requests are handled at the receiving
+- TODO(Rozsa): add details
+
 ## Integration Testing
 - To help test our code, we extended the client from the individual programming assignments.
 - This helped with debugging in the earlier phases of development for this milestone
   - However, due to changes in how we handle messages (the node that sends
   messages back to the client is not the same node that the client sends its requests to) they are currently not
   fully functional, but we plan of have them updated for milestone 3.
-
