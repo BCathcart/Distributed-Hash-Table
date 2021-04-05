@@ -1,19 +1,20 @@
 package kvstore
 
 import (
+	"encoding/binary"
+	"errors"
 	"log"
 	"os"
 	"runtime"
 	"runtime/debug"
 	"strconv"
 
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
-	"github.com/abcpen431/miniproject/src/util"
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 
 	"google.golang.org/protobuf/proto"
 )
 
-/************* APPLICATION CODE *************/
 var MAX_MEM_USAGE uint64 = 120 * 1024 * 1024 // Max is actually 128 MB (8MB of buffer)
 
 const MAX_KEY_LEN = 32
@@ -80,8 +81,9 @@ func handleOverload() *pb.KVResponse {
 * @param serializedReq The serialized KVRequest.
 * @return A serialized KVResponse, nil if there was an error.
 * @return Error object if there was an error, nil otherwise.
+* @return the errorcode
  */
-func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error) {
+func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner util.KeyRange) ([]byte, error, uint32) {
 	var errCode uint32
 	kvRes := &pb.KVResponse{}
 
@@ -89,9 +91,9 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	we only restrict PUT and GET requests. REMOVE and WIPEOUT may increase
 	the memory momentarily, but the benifit of the freed up space outweighs
 	the momentary costs. */
-	cmd := kvRequest.Command
-	key := string(kvRequest.Key)
-	value := kvRequest.Value
+	cmd := kvRequest.GetCommand()
+	key := string(kvRequest.GetKey())
+	value := kvRequest.GetValue()
 	var version int32
 	if kvRequest.Version != nil {
 		version = *kvRequest.Version
@@ -108,10 +110,16 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = INVALID_VAL
 		} else if memUsage() > MAX_MEM_USAGE {
 			kvRes = handleOverload()
+			log.Println("OVERLOADED FOR PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 			errCode = OVERLOAD
 		} else {
 			errCode = kvStore_.Put(key, value, version)
+			//DEBUGGING
+			kvRes.Value = value
 		}
+
+		//DEBUGGING
+		log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -129,18 +137,25 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 			errCode = code
 		}
 
+		//DEBUGGING
+		log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
+
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
+			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
+			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
 		os.Exit(1)
 
 	case WIPEOUT:
-		kvStore_.Wipeout()
+		kvStore_.WipeoutKeys(requestOwner)
+		log.Println("WIPING OUT KEYS", requestOwner)
+		PrintKVStoreSize()
 		debug.FreeOSMemory() // Force GO to free unused memory
 		errCode = OK
 
@@ -168,12 +183,92 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int) ([]byte, error
 	resPayload, err := proto.Marshal(kvRes)
 	if err != nil {
 		log.Println("Marshaling payload error. ", err.Error())
-		return nil, err
+		return nil, err, errCode
 	}
 
-	return resPayload, nil
+	return resPayload, nil, errCode
 }
 
+func InternalDataUpdate(kvRequest *pb.KVRequest) error {
+	cmd := kvRequest.Command
+	key := string(kvRequest.Key)
+
+	var errCode uint32
+	switch cmd {
+	case PUT:
+		var version int32
+		if kvRequest.Version != nil {
+			version = *kvRequest.Version
+		} else {
+			version = 0
+		}
+
+		if memUsage() > MAX_MEM_USAGE {
+			handleOverload()
+			return errors.New("Overload")
+		} else {
+			errCode = kvStore_.Put(key, kvRequest.Value, version)
+		}
+
+	case REMOVE:
+		kvStore_.lock.Lock()
+		errCode = kvStore_.Remove(key)
+		kvStore_.lock.Unlock()
+
+	default:
+		return errors.New("Command is not an update")
+	}
+
+	if errCode != OK {
+		return errors.New("Data update failed with error code: " + strconv.Itoa(int(errCode)))
+	}
+
+	return nil
+}
+
+/*
+* Deletes all keys in the kvStore within the key range
+ */
+func Sweep(keys util.KeyRange) {
+	kvStore_.WipeoutKeys(keys)
+}
+
+/*
+* PrintKVStoreSize prints out number of elements of the kvstore
+ */
 func PrintKVStoreSize() {
-	log.Println("SIZE: ", kvStore_.GetSize())
+	log.Print("\n\n\n =======SIZE:===============", kvStore_.data.Len(), "=========\n\n\n")
+}
+
+/**
+* IsGetRequest returns true if the KVRequest is a GET request
+ */
+func IsGetRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == GET
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is an update, i.e. PUT or REMOVE request
+ */
+func IsUpdateRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+/**
+* IsUpdateRequest returns true if the KVRequest is a key-value request (i.e. PUT, GET, REMOVE, or WIPEOUT)
+ */
+func IsKVRequest(kvrequest *pb.KVRequest) bool {
+	return kvrequest.GetCommand() == PUT || kvrequest.GetCommand() == GET ||
+		kvrequest.GetCommand() == REMOVE || kvrequest.GetCommand() == WIPEOUT
+}
+
+//For DEBUGGING
+func BytetoInt(val []byte) uint32 {
+	var tmp_value []byte
+	if len(val) >= 4 {
+		tmp_value = val[:4]
+		return binary.LittleEndian.Uint32(tmp_value)
+	}
+	return 0
 }

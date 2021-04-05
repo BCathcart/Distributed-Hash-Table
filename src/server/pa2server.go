@@ -7,9 +7,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/abcpen431/miniproject/src/membership"
-	requestreply "github.com/abcpen431/miniproject/src/requestreply"
-	"github.com/abcpen431/miniproject/src/util"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/membership"
+	requesthandler "github.com/CPEN-431-2021/dht-abcpen431/src/requestHandler"
+	requestreply "github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /**
@@ -25,34 +26,27 @@ func runServer(otherMembers []*net.UDPAddr, port int) error {
 	}
 	defer connection.Close()
 
-	ip := getOutboundIP()
+	// find local IP address
+	ip := util.GetOutboundIP()
 	fmt.Println("MyIP", ip)
 
 	// Bootstrap node
-	requestreply.RequestReplyLayerInit(&connection, membership.ExternalMsgHandler, membership.InternalMsgHandler, membership.MemberUnavailableHandler)
+	// init the request/reply protocol layer
+	requestreply.RequestReplyLayerInit(&connection, requesthandler.ExternalReqHandler, requesthandler.InternalReqHandler, membership.MemberUnavailableHandler, requesthandler.InternalResHandler)
 
-	membership.MembershipLayerInit(&connection, otherMembers, ip.String(), int32(port))
+	// init the membership service layer
+	membership.Init(&connection, otherMembers, ip.String(), int32(port))
 
+	// run until interrupted
 	err = requestreply.MsgListener()
 
 	// Should never get here if everything is working
 	return err
 }
 
-// Source: Sathish's campuswire post #310
-func getOutboundIP() net.IP {
-	conn, err := net.Dial("udp", "8.8.8.8:80")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer conn.Close()
-
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
-
-	return localAddr.IP
-}
-
 func main() {
+
+	// log.SetOutput(ioutil.Discard)
 
 	// TASK 2: Dockerize project and parse port and member list file arguments.
 	// I added the hardcoded "nodes" array that could be used for testing.
@@ -76,11 +70,13 @@ func main() {
 		return
 	}
 
-	var nodes []*net.UDPAddr
 	data, err := util.ReadLines(args[2])
 	if err != nil {
 		log.Println("Could not read", args[2])
 	}
+
+	// get addresses to existing nodes
+	var nodes []*net.UDPAddr
 	for _, line := range data {
 		addr, err := net.ResolveUDPAddr("udp", line)
 		if err != nil {
@@ -91,6 +87,7 @@ func main() {
 	}
 	fmt.Println(nodes)
 
+	// start the server
 	err = runServer(nodes, port)
 	if err != nil {
 		fmt.Println("Server encountered an error. " + err.Error())

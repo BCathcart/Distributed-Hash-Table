@@ -4,42 +4,62 @@ import (
 	"log"
 	"net"
 
-	pb "github.com/abcpen431/miniproject/pb/protobuf"
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 )
 
-var externalReqHandler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) = nil
-var internalReqHandler func(net.Addr, *pb.InternalMsg) (bool, []byte, error) = nil
-var nodeUnavailableHandler func(addr *net.Addr) = nil
+/*
+ * Internal (server-server) and external (client-server) request-response handlers
+ * Getters and Setters for the handlers
+ */
 
-func setExternalReqHandler(handler func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error)) {
+type externalReqHandlerFunc func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, error)
+type internalReqHandlerFunc func(net.Addr, *pb.InternalMsg) (*net.Addr, bool, []byte, int, error)
+
+var externalReqHandler externalReqHandlerFunc = nil
+var internalReqHandler internalReqHandlerFunc = nil
+var nodeUnavailableHandler func(*net.Addr) = nil
+var internalResHandler func(net.Addr, *pb.InternalMsg) = nil
+
+func setExternalReqHandler(handler externalReqHandlerFunc) {
 	externalReqHandler = handler
 }
 
-func setInternalReqHandler(handler func(net.Addr, *pb.InternalMsg) (bool, []byte, error)) {
+func setInternalReqHandler(handler internalReqHandlerFunc) {
 	internalReqHandler = handler
 }
 
-func setNodeUnavailableHandler(handler func(addr *net.Addr)) {
+func setNodeUnavailableHandler(handler func(*net.Addr)) {
 	nodeUnavailableHandler = handler
 }
 
-func getExternalReqHandler() func(net.Addr, *pb.InternalMsg) (net.Addr, net.Addr, []byte, error) {
+func setInternalResHandler(handler func(net.Addr, *pb.InternalMsg)) {
+	internalResHandler = handler
+}
+
+func getExternalReqHandler() externalReqHandlerFunc {
 	if externalReqHandler == nil {
 		log.Println("Error: External request handler has not been set")
 	}
 	return externalReqHandler
 }
 
-func getInternalReqHandler() func(net.Addr, *pb.InternalMsg) (bool, []byte, error) {
+func getInternalReqHandler() internalReqHandlerFunc {
 	if internalReqHandler == nil {
 		log.Println("Error: Internal request handler has not been set")
 	}
 	return internalReqHandler
 }
 
-func getNodeUnavailableHandler() func(addr *net.Addr) {
+func getNodeUnavailableHandler() func(*net.Addr) {
 	if nodeUnavailableHandler == nil {
 		log.Println("Error: Node unavailable handler has not been set")
 	}
 	return nodeUnavailableHandler
+}
+
+func getInternalResHandler() func(net.Addr, *pb.InternalMsg) {
+	if internalResHandler == nil {
+		log.Println("Error: Internal response handler has not been set")
+	}
+	return internalResHandler
 }

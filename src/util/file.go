@@ -5,6 +5,9 @@ import (
 	"os"
 )
 
+/**
+Used to read text files, and parsing ip / port
+*/
 func ReadLines(filepath string) ([]string, error) {
 	var lines []string
 	file, err := os.Open(filepath)

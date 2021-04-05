@@ -8,4 +8,5 @@ message InternalMsg {
     fixed64 checkSum = 3;
     uint32 internalID = 4;
     bool isResponse = 5;
+    string addr = 6;
 }

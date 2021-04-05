@@ -1,4 +1,4 @@
-module github.com/abcpen431/miniproject
+module github.com/CPEN-431-2021/dht-abcpen431
 
 go 1.15
 

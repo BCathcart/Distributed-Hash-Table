@@ -3,9 +3,10 @@ package kvstore
 import (
 	"container/list"
 	"log"
-	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
 /* KEY VALUE STORE */
@@ -41,19 +42,18 @@ func NewKVStore() *KVStore {
  */
 func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 	// Remove needed to decrement kvStoreSize_ if key already exists
-	kvs.Remove(key)
 	kvs.lock.Lock()
-
 	// Check if the store is full
 	if kvs.size > MAX_KV_STORE_SIZE {
 		kvs.lock.Unlock()
 		return NO_SPACE
 	}
 
+	kvs.Remove(key)
+
 	kvs.data.PushBack(kventry{key: key, val: val, ver: version})
 	kvs.size += uint32(len(key) + len(val) + 4) // Increase kv store size
 
-	log.Println(kvs.size)
 	kvs.lock.Unlock()
 
 	return OK
@@ -92,14 +92,10 @@ func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
 func (kvs *KVStore) Remove(key string) uint32 {
-	kvs.lock.Lock()
 	success, n := kvs.removeListElem(key)
 	if success == true {
 		kvs.size -= uint32(n) // Decrease kv store size
 	}
-
-	log.Println(kvs.size)
-	kvs.lock.Unlock()
 
 	if success == true {
 		return OK
@@ -123,7 +119,6 @@ func (kvs *KVStore) Wipeout() {
 	kvs.data.Init() // Clears the list
 	kvs.size = 0
 	kvs.lock.Unlock()
-
 }
 
 /**
@@ -162,19 +157,35 @@ func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
 * Getter for a list of all keys stored in kvStore
 * @return keyList A []int with all the keys
  */
-func (kvs *KVStore) getAllKeys() []int {
-	var keyList []int
+func (kvs *KVStore) getAllKeys() []string {
+	var keyList []string
+
 	kvs.lock.RLock()
 
 	if kvs.GetSize() == 0 {
+		kvs.lock.RUnlock()
 		return nil
 	}
 
 	for e := kvs.data.Front(); e != nil; e = e.Next() {
-		key, _ := strconv.Atoi(e.Value.(kventry).key)
-		keyList = append(keyList, key)
+		keyList = append(keyList, e.Value.(kventry).key)
 	}
 
 	kvs.lock.RUnlock()
 	return keyList
+}
+
+func (kvs *KVStore) WipeoutKeys(keys util.KeyRange) {
+	kvs.lock.Lock()
+	var next *list.Element = nil
+	for e := kvs.data.Front(); e != nil; e = next {
+		next = e.Next()
+		key := e.Value.(kventry).key
+		if keys.IncludesKey(util.Hash([]byte(key))) {
+			kvStore_.size -= uint32(len(e.Value.(kventry).key) + len(e.Value.(kventry).val) + 4)
+			kvStore_.data.Remove(e)
+		}
+	}
+	kvs.lock.Unlock()
+	log.Println("LEN KV STORE = ", kvStore_.data.Len())
 }

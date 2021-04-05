@@ -3,13 +3,14 @@ package requestreply
 import (
 	"log"
 	"net"
+	"strconv"
 	"time"
 )
 
 // Maps msg ID to serialized response
 var reqCache_ *Cache
 
-const REQ_RETRY_TIMEOUT_MS = 250 // ms
+const REQ_RETRY_TIMEOUT_MS = 500 // ms
 const REQ_CACHE_TIMEOUT = 6      // sec
 
 type ReqCacheEntry struct {
@@ -35,14 +36,13 @@ func sweepReqCache() {
 	var membersToPing []*net.Addr
 	var errResponseAddrs []*errRes
 
+	// get all entries currently in the cache and iterate thru them
 	reqCache_.lock.Lock()
 	entries := reqCache_.data.Entries()
 	for i := 0; i < len(entries); i++ {
 		entry := entries[i]
-		// log.Println(entry.Key)
-		// log.Println(entry.Value)
-		// time.Sleep(2 * time.Second)
 
+		// check for timeout on each entry
 		reqCacheEntry := entry.Value.(ReqCacheEntry)
 		elapsedTime := time.Now().Sub(reqCacheEntry.time)
 
@@ -64,13 +64,13 @@ func sweepReqCache() {
 	reqCache_.lock.Unlock()
 
 	// Send error responses
-	for _, errResponse := range errResponseAddrs {
-		sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, errResponse.isFirstHop == false)
-	}
+	// for _, errResponse := range errResponseAddrs {
+	// 	sendUDPResponse(*errResponse.addr, []byte(errResponse.msgId), nil, 0, errResponse.isFirstHop == false)
+	// }
 
 	// Send ping requests
 	for _, addr := range membersToPing {
-		sendUDPRequest(addr, nil, PING)
+		SendPingRequest(addr)
 	}
 
 }
@@ -79,6 +79,7 @@ func sweepReqCache() {
 
 /*
 * Handles requests that have not received a response within the timeout period
+* @param key The entry's key
 * @param reqCacheEntry The timed out cache entry
 * @return node to Ping, -1 no nodes need to be pinged.
 * @return clients/nodes address to send error responses too, nil if no error responses need to be sent.
@@ -103,18 +104,14 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 
 	} else if !isClientReq {
 		// Retry internal requests up to INTERNAL_REQ_RETRIES times
-		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES {
+		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries >= 10) {
 			log.Println("RE-SENDING MSG")
-
 			reSendMsg(key, reqCacheEntry)
 
 			// Handle expired internal requests
-		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES {
-			if reqCacheEntry.msgType == PING {
-				log.Println("PING TIMED OUT")
-				// TODO: set member's status to unavailable if it's a ping message
-				//   - Add function to call here in gossip/membership service
-
+		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries >= 10) {
+			if reqCacheEntry.msgType == PING_MSG {
+				log.Println("PING_MSG TIMED OUT")
 				go getNodeUnavailableHandler()(reqCacheEntry.addr)
 
 			} else {
@@ -146,22 +143,25 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 * @param isFirstHop True if the request originated from a client and is being forwarded internally for the first time, false otherwise
  */
 func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, returnAddr *net.Addr, isFirstHop bool) {
-	if isFirstHop && msgType != FORWARDED_CLIENT_REQ {
+	// check for false indication of a first hop
+	if isFirstHop && (msgType != FORWARDED_CLIENT_REQ && msgType != FORWARDED_CHAIN_UPDATE_REQ) {
 		panic("isFirstHop can only be true for client requests")
 	}
 
+	// generate the key and construct entry
 	reqCache_.lock.Lock()
-	req := reqCache_.data.Get(id)
+	key := id + strconv.Itoa(int(msgType))
+	req := reqCache_.data.Get(key)
 
 	// Increment retries if it already exists
 	if req != nil {
 		reqCacheEntry := req.(ReqCacheEntry)
 		reqCacheEntry.retries++
-		reqCache_.data.Put(id, reqCacheEntry)
+		reqCache_.data.Put(key, reqCacheEntry)
 
 		// Otherwise add a new entry
 	} else {
-		reqCache_.data.Put(id, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
+		reqCache_.data.Put(key, ReqCacheEntry{msgType, msg, time.Now(), 0, addr, returnAddr, isFirstHop})
 	}
 	reqCache_.lock.Unlock()
 }
@@ -169,6 +169,7 @@ func putReqCacheEntry(id string, msgType uint8, msg []byte, addr *net.Addr, retu
 /*
 * Re-sends the cached request.
 * IMPORTANT: caller must be holding reqCache lock.
+* @param key The entry's key.
 * @param reqCacheEntry The cached request to re-send.
  */
 func reSendMsg(key string, reqCacheEntry *ReqCacheEntry) {
@@ -178,5 +179,5 @@ func reSendMsg(key string, reqCacheEntry *ReqCacheEntry) {
 	// Update num retries in
 	reqCacheEntry.retries++
 	reqCacheEntry.time = time.Now()
-	reqCache_.data.Put(string(key), *reqCacheEntry)
+	reqCache_.data.Put(key, *reqCacheEntry)
 }
