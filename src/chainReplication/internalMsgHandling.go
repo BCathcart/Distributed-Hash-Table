@@ -19,16 +19,18 @@ import (
  * @param coorAddr The coordinator for the key range being transferred.
  * @param keys The key range to transfer.
  */
-func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRange) {
+func sendDataTransferReq(succAddr *net.Addr, keys util.KeyRange, retry bool, force bool) {
 	if succAddr == nil {
 		log.Println("ERROR: Successor address should not be nil")
 		return
 	}
 
-	addPendingTransfer(succAddr, coorAddr, keys)
+	if !retry {
+		addExpectedTransfer(keys)
+	}
 
-	payload := util.SerializeAddr(coorAddr)
-	log.Println("\nSENDING TRANSFER REQUEST FOR", (*coorAddr).String())
+	payload := util.SerializeKeyRangeTranReq(keys, force)
+	log.Println("INFO: SENDING TRANSFER REQUEST FOR ", keys)
 	requestreply.SendTransferReq(payload, succAddr)
 }
 
@@ -39,41 +41,108 @@ func sendDataTransferReq(succAddr *net.Addr, coorAddr *net.Addr, keys util.KeyRa
  * @return The payload for the response message.
  * @return True if a response should be sent, false otherwise
  */
-func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
+func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
-	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("RECEIVING TRANSFER REQUEST FOR ", (*addr).String())
-
-	// ACK if the address in in expectedTransfers
-	// i.e. we are expecting the transfer
-	// This ensures the transfer only happens when both parties are ready
-
 	if msg.Payload == nil {
-		log.Println("ERROR: HandleTransferReq - Coordinator address can't be null")
-		return nil, false
+		log.Println("ERROR: HandleTransferReq - Payload can't be null")
+		return
 	}
 
-	// Check if the transfer is expected
-	for _, transfer := range expectedTransfers {
-		if util.CreateAddressStringFromAddr(transfer.coordinator) == string(msg.Payload) {
-			log.Println("INFO: TRANSFER IS EXPECTED!")
-			transfer.timer.Reset(15 * time.Second) // Reset timer
-			return msg.Payload, true
+	if successor == nil {
+		log.Println("WARN: Cannot handle transfer request b/c successor is null")
+		return
+	}
+
+	// Make sure the sender is our successor to keep the system consistent
+	// TODO(Brennan): verify if this is needed
+	if util.CreateAddressStringFromAddr(successor.addr) != util.CreateAddressStringFromAddr(senderAddr) {
+		log.Println("WARN: Cannot handle transfer request b/c successor doesn't match the sender")
+		return
+	}
+
+	keys, forceTransfer := util.DeserializeKeyRangeTranReq(msg.Payload)
+	log.Println("RECEIVING TRANSFER REQUEST FOR ", keys)
+
+	// Check if keys are in sendingTransfers
+	for _, transferKeys := range sendingTransfers {
+		if transferKeys.Low == keys.Low && transferKeys.High == keys.High {
+			log.Println("INFO: Transfer is already in progress")
+			return
 		}
 	}
 
-	addr, err := util.DeserializeAddr(msg.Payload)
-	if err != nil {
-		log.Println("ERROR: HandleTransferReq - ", err)
-	} else {
-		log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.CreateAddressStringFromAddr(addr))
-		log.Println("Expecting ", expectedTransfers)
-		log.Println("Predecessors: ", predecessors)
+	// Send transfer DONE if requests is between successor.High and myKeys.High
+	// which means these keys were lost
+	// TODO(Brennan): this gets triggerred when second joins
+	log.Println(keys)
+	log.Println(currentRange)
+	log.Println(successor.keys)
+	if (util.BetweenKeys(keys.High, responsibleRange.High, successor.keys.High) ||
+		util.BetweenKeys(keys.Low, responsibleRange.High, successor.keys.High)) &&
+		predecessors[2] != nil &&
+		util.CreateAddressStringFromAddr(predecessors[2].addr) != util.CreateAddressStringFromAddr(successor.addr) {
+		log.Println("WARN: Lost keys: ", keys)
+		addSendingTransfer(keys)
+		requestreply.SendTransferFinished(util.SerializeKeyRange(keys), successor.addr)
+		return
 	}
 
-	return nil, false
+	if !forceTransfer {
+		// Check if we have the keys
+		if !util.BetweenKeys(keys.Low, currentRange.Low, currentRange.High) ||
+			!util.BetweenKeys(keys.High, currentRange.Low, currentRange.High) {
+			log.Println("WARN: Request for keys ", keys, " are not in the current range ", currentRange)
+			return
+		}
+	} else {
+		log.Println("WARN: Transfer being forced for ", keys, " with current range ", currentRange)
+	}
+
+	addSendingTransfer(keys)
+
+	// Start the transfer
+	succAddr := successor.addr
+	go transferService.TransferKVStoreData(succAddr, keys.Low, keys.High, func() {
+		log.Println("SENDING TRANSFER FINISHED to ", succAddr, " FOR ", keys)
+
+		requestreply.SendTransferFinished(util.SerializeKeyRange(keys), succAddr)
+
+		// Time out after 10 seconds (successor can then request again).
+		// Assuming everything is working properly, this likely means the successor failed and that
+		// the transfer will be removed anyways - still good to do theough just in case.
+		delayedRemoveSendingTransfer(keys, 10)
+	})
+}
+
+/*
+ * Removes the finished transfer from the expected transfer array.
+ *
+ * @param msg The received TRANSFER_FINISHED message.
+ */
+func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
+
+	keys := util.DeserializeKeyRange(msg.Payload)
+	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", keys)
+
+	removed := removeExpectedTransfer(keys)
+
+	if !removed {
+		// TODO: make log.Println()
+		log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
+			". Expected transfers ", expectedTransfers)
+	}
+
+	updateCurrentRange(keys.Low)
+
+	// Artificial delay to make sure any in-flight transfer requests
+	// are handled before ACK is received
+	time.Sleep(200 * time.Millisecond)
+
+	return msg.Payload
 }
 
 /*
@@ -82,59 +151,26 @@ func HandleTransferReq(msg *pb.InternalMsg) ([]byte, bool) {
  * @param sender The address of the sender who acknowledged the transfer request.
  * @param msg The transfer request ACK message.
  */
-func HandleDataTransferRes(sender *net.Addr, msg *pb.InternalMsg) {
+func HandleDataTransferFinishedAck(sender *net.Addr, msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
-	addr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("RECEIVING TRANSFER ACK FOR ", (*addr).String())
-
 	if msg.Payload == nil {
-		log.Println("ERROR: HandleDataTransferRes - Coordinator address can't be null")
+		log.Println("INFO: Received ACK for bootstraping transfer finished msg")
 		return
 	}
 
-	// Check if the transfer is expected
-	for i, transfer := range pendingTransfers {
-		log.Println("Checking for pending transfers")
-		if string(util.SerializeAddr(transfer.coordinator)) == string(msg.Payload) &&
-			string(util.SerializeAddr(transfer.receiver)) == string(util.SerializeAddr(sender)) {
+	// Remove sending transfer
+	// This ACK prevents the sender to respond to a re-sent transfer request before the
+	// receiver knows that this transfer is finished (whole transfer would run again)
 
-			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
+	keys := util.DeserializeKeyRange(msg.Payload)
+	log.Println("RECEIVING TRANSFER FINISHED ACK FOR ", keys)
 
-			// Start the transfer
-			go transferService.TransferKVStoreData(transfer.receiver, transfer.keys.Low, transfer.keys.High, func() {
-				log.Println("SENDING TRANSFER FINISHED FOR ", (*transfer.coordinator).String(), (*transfer.receiver).String())
-				requestreply.SendTransferFinished(util.SerializeAddr(transfer.coordinator), transfer.receiver)
-			})
-			return
-		}
-	}
-
-	addr, err := util.DeserializeAddr(msg.Payload)
-	if err != nil {
-		log.Println("ERROR: HandleDataTransferRes - ", err)
-	} else {
-		log.Println("ERROR: Not expecting a transfer for keys coordinated by ", util.CreateAddressStringFromAddr(addr))
-	}
-}
-
-/*
- * Removes the finished transfer from the expected transfer array.
- *
- * @param msg The received TRANSFER_FINISHED message.
- */
-func HandleTransferFinishedMsg(msg *pb.InternalMsg) {
-	coarseLock.Lock()
-	defer coarseLock.Unlock()
-
-	coorAddr, _ := util.DeserializeAddr(msg.Payload)
-	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", (*coorAddr).String())
-
-	removed := removeExpectedTransfer(coorAddr)
+	log.Println(sendingTransfers)
+	removed := removeSendingTransfer(keys)
 
 	if !removed {
-		addr, _ := util.DeserializeAddr(msg.Payload)
-		log.Println("ERROR: Unexpected HandleTransferFinishedMsg", util.CreateAddressStringFromAddr(addr))
+		log.Fatal("ERROR: Unexpected HandleDataTransferFinishedAck ", util.CreateAddressStringFromAddr(sender), keys)
 	}
 }

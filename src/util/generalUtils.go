@@ -1,6 +1,8 @@
 package util
 
 import (
+	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"log"
 	"net"
@@ -52,6 +54,38 @@ func DeserializeAddr(serAddr []byte) (*net.Addr, error) {
 	return &addr, err
 }
 
+func SerializeKeyRangeTranReq(keys KeyRange, forceTransfer bool) []byte {
+	var force byte = 0
+	if forceTransfer {
+		force = 1
+	}
+	return append(SerializeKeyRange(keys), force)
+}
+
+func DeserializeKeyRangeTranReq(serKeyRange []byte) (KeyRange, bool) {
+	force := serKeyRange[8]
+	return DeserializeKeyRange(serKeyRange), force == 1
+}
+
+func SerializeKeyRange(keys KeyRange) []byte {
+	serLow := make([]byte, 4)
+	binary.LittleEndian.PutUint32(serLow, keys.Low)
+	fmt.Println(serLow)
+
+	serHigh := make([]byte, 4)
+	binary.LittleEndian.PutUint32(serHigh, keys.High)
+	fmt.Println(serHigh)
+
+	return append(serLow, serHigh...)
+}
+
+func DeserializeKeyRange(serKeyRange []byte) KeyRange {
+	keys := KeyRange{}
+	keys.Low = binary.LittleEndian.Uint32(serKeyRange[0:4])
+	keys.High = binary.LittleEndian.Uint32(serKeyRange[4:8])
+	return keys
+}
+
 func GetNodeKey(ipStr string, portStr string) uint32 {
 	return crc32.ChecksumIEEE([]byte(ipStr + portStr))
 }
@@ -64,11 +98,12 @@ func Hash(bytes []byte) uint32 {
 	return crc32.ChecksumIEEE(bytes)
 }
 
+// TODO(Brennan): any problems with making it inclusive?
 func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 	if lowerKey < upperKey {
-		return targetKey < upperKey && targetKey > lowerKey
+		return targetKey <= upperKey && targetKey >= lowerKey
 	} else { // Edge case where there's a wrap-around
-		return targetKey > lowerKey || targetKey < upperKey
+		return targetKey >= lowerKey || targetKey <= upperKey
 	}
 }
 

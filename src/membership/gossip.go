@@ -144,12 +144,14 @@ func updateChain(lock *sync.RWMutex) {
 		}
 	}
 
-	if successor != nil {
-		successorAddr, _ := getMemberAddr(successor)
-		successorKey := successor.GetKey()
-		chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
-	} else {
-		chainReplication.UpdateSuccessor(nil, 0, 0)
+	if memberStore_.getCurrMember().Status == STATUS_NORMAL {
+		if successor != nil {
+			successorAddr, _ := getMemberAddr(successor)
+			successorKey := successor.GetKey()
+			chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
+		} else {
+			chainReplication.UpdateSuccessor(nil, 0, 0)
+		}
+		chainReplication.UpdatePredecessors(addresses, keys)
 	}
-	chainReplication.UpdatePredecessors(addresses, keys)
 }

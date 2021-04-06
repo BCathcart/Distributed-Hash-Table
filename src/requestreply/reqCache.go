@@ -104,7 +104,7 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 
 	} else if !isClientReq {
 		// Retry internal requests up to INTERNAL_REQ_RETRIES times
-		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries >= 10) {
+		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries < 10) {
 			log.Println("RE-SENDING MSG")
 			reSendMsg(key, reqCacheEntry)
 

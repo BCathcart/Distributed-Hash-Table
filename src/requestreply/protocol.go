@@ -555,8 +555,8 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	// Add to request cache
-	// don't cache membership requests because we don't expect a response
-	if internalID != MEMBERSHIP_REQ {
+	// don't cache membership requests and transfer requests because we don't expect a response
+	if internalID != MEMBERSHIP_REQ && internalID != TRANSFER_REQ {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 
