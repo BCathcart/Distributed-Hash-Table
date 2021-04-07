@@ -107,7 +107,20 @@ func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 	}
 }
 
-// TODO(Brennan): check that this works
+func OverlappingKeyRange(keys1 KeyRange, keys2 KeyRange) *KeyRange {
+	if BetweenKeys(keys1.Low, keys2.Low, keys2.High) && BetweenKeys(keys1.High, keys2.Low, keys2.High) {
+		return &keys1
+	} else if BetweenKeys(keys2.Low, keys1.Low, keys1.High) && BetweenKeys(keys2.High, keys1.Low, keys1.High) {
+		return &keys2
+	} else if BetweenKeys(keys1.Low, keys2.Low, keys2.High) {
+		return &KeyRange{keys1.Low, keys2.High}
+	} else if BetweenKeys(keys1.High, keys2.Low, keys2.High) {
+		return &KeyRange{keys2.Low, keys1.High}
+	} else {
+		return nil
+	}
+}
+
 func RemoveAddrFromArr(s []*net.Addr, i int) []*net.Addr {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]

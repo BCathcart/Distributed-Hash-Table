@@ -11,17 +11,17 @@ import (
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 )
 
-// TRANSFER_REQ internal msg type
 /*
  * Sends a request to initiate a data transfer with its successor (the receiver of the transfer).
  *
- * @param succAddr The address of the successor.
- * @param coorAddr The coordinator for the key range being transferred.
- * @param keys The key range to transfer.
+ * @param predAddr The address of the first predecessor.
+ * @param keys The key range to request a transfer for.
+ * @param retry True if this is a retry, false if this is the first request for the key range.
+ * @param force True if the predecessor should be forced to do the transfer even if it doesn't have the full key range.
  */
-func sendDataTransferReq(succAddr *net.Addr, keys util.KeyRange, retry bool, force bool) {
-	if succAddr == nil {
-		log.Println("ERROR: Successor address should not be nil")
+func sendDataTransferReq(predAddr *net.Addr, keys util.KeyRange, retry bool, force bool) {
+	if predAddr == nil {
+		log.Println("ERROR: Can't request transfer from nil predecessor")
 		return
 	}
 
@@ -31,15 +31,14 @@ func sendDataTransferReq(succAddr *net.Addr, keys util.KeyRange, retry bool, for
 
 	payload := util.SerializeKeyRangeTranReq(keys, force)
 	log.Println("INFO: SENDING TRANSFER REQUEST FOR ", keys)
-	requestreply.SendTransferReq(payload, succAddr)
+	requestreply.SendTransferReq(payload, predAddr)
 }
 
 /*
- * Responds to the transfer intiator if the transfer is expected. Drops the message otherwise.
+ * Responds to the transfer intiator if the transfer can be done. Drops the message otherwise.
  *
+ * @param senderAddr The sender's address.
  * @param msg The transfer request message.
- * @return The payload for the response message.
- * @return True if a response should be sent, false otherwise
  */
 func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 	coarseLock.Lock()
@@ -63,7 +62,31 @@ func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 	}
 
 	keys, forceTransfer := util.DeserializeKeyRangeTranReq(msg.Payload)
-	log.Println("RECEIVING TRANSFER REQUEST FOR ", keys)
+	log.Println("INFO: Received transfer request for ", keys)
+
+	if !forceTransfer {
+		// Check if we don't have the keys
+		if !util.BetweenKeys(keys.Low, currentRange.Low, currentRange.High) ||
+			!util.BetweenKeys(keys.High, currentRange.Low, currentRange.High) {
+			log.Println("WARN: Request for keys ", keys, " are not in the current range ", currentRange)
+			if predecessors[2] != nil {
+				// Get overlapping range
+				overlapKeys := util.OverlappingKeyRange(currentRange, keys)
+				if overlapKeys == nil {
+					return
+				}
+				log.Println("INFO: Sending part of the range of keys ", overlapKeys)
+
+				// NOTE: Any keys requested above the range the predecessor currently has are lost
+				keys = util.KeyRange{overlapKeys.Low, keys.High}
+			} else {
+				// Let the force transfers play out if their are less than 3 nodes
+				return
+			}
+		}
+	} else {
+		log.Println("WARN: Transfer being forced for ", keys, " with current range ", currentRange)
+	}
 
 	// Check if keys are in sendingTransfers
 	for _, transferKeys := range sendingTransfers {
@@ -73,45 +96,18 @@ func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 		}
 	}
 
-	// Send transfer DONE if requests is between successor.High and myKeys.High
-	// which means these keys were lost
-	// TODO(Brennan): this gets triggerred when second joins
-	log.Println(keys)
-	log.Println(currentRange)
-	log.Println(successor.keys)
-	if (util.BetweenKeys(keys.High, responsibleRange.High, successor.keys.High) ||
-		util.BetweenKeys(keys.Low, responsibleRange.High, successor.keys.High)) &&
-		predecessors[2] != nil &&
-		util.CreateAddressStringFromAddr(predecessors[2].addr) != util.CreateAddressStringFromAddr(successor.addr) {
-		log.Println("WARN: Lost keys: ", keys)
-		addSendingTransfer(keys)
-		requestreply.SendTransferFinished(util.SerializeKeyRange(keys), successor.addr)
-		return
-	}
-
-	if !forceTransfer {
-		// Check if we have the keys
-		if !util.BetweenKeys(keys.Low, currentRange.Low, currentRange.High) ||
-			!util.BetweenKeys(keys.High, currentRange.Low, currentRange.High) {
-			log.Println("WARN: Request for keys ", keys, " are not in the current range ", currentRange)
-			return
-		}
-	} else {
-		log.Println("WARN: Transfer being forced for ", keys, " with current range ", currentRange)
-	}
-
 	addSendingTransfer(keys)
 
 	// Start the transfer
 	succAddr := successor.addr
 	go transferService.TransferKVStoreData(succAddr, keys.Low, keys.High, func() {
-		log.Println("SENDING TRANSFER FINISHED to ", succAddr, " FOR ", keys)
+		log.Println("INFO: SENDING TRANSFER FINISHED to ", (*succAddr).String(), " FOR ", keys)
 
 		requestreply.SendTransferFinished(util.SerializeKeyRange(keys), succAddr)
 
 		// Time out after 10 seconds (successor can then request again).
 		// Assuming everything is working properly, this likely means the successor failed and that
-		// the transfer will be removed anyways - still good to do theough just in case.
+		// the transfer will be removed anyways - still good to do just in case.
 		delayedRemoveSendingTransfer(keys, 10)
 	})
 }
@@ -128,25 +124,35 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 	keys := util.DeserializeKeyRange(msg.Payload)
 	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", keys)
 
-	removed := removeExpectedTransfer(keys)
-
-	if !removed {
-		// TODO: make log.Println()
+	// NOTE: we only have one expected transfer at a time right now
+	if expectedTransfers[0].keys.High != keys.High {
 		log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
 			". Expected transfers ", expectedTransfers)
+	} else if expectedTransfers[0].keys.Low == keys.Low {
+		removed := removeExpectedTransfer(keys)
+		if !removed {
+			log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
+				". Expected transfers ", expectedTransfers)
+		}
+		updateCurrentRange(keys.Low, true)
+	} else {
+		// We received a partial transfer, update the expected transfer
+		log.Println("INFO: We received a partial transfer ", keys)
+		expectedTransfers[0].keys.High = keys.Low
+		updateCurrentRange(keys.Low, false)
 	}
-
-	updateCurrentRange(keys.Low)
 
 	// Artificial delay to make sure any in-flight transfer requests
 	// are handled before ACK is received
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
 
 	return msg.Payload
 }
 
 /*
- * Starts the transfer to the accepting receiver.
+ * Removes the transfer from sendingTransfers array. This ACK prevents the sender to respond to
+ * a re-sent transfer request before the receiver knows that this transfer is finished
+ * (whole transfer would run again).
  *
  * @param sender The address of the sender who acknowledged the transfer request.
  * @param msg The transfer request ACK message.
@@ -160,16 +166,10 @@ func HandleDataTransferFinishedAck(sender *net.Addr, msg *pb.InternalMsg) {
 		return
 	}
 
-	// Remove sending transfer
-	// This ACK prevents the sender to respond to a re-sent transfer request before the
-	// receiver knows that this transfer is finished (whole transfer would run again)
-
 	keys := util.DeserializeKeyRange(msg.Payload)
 	log.Println("RECEIVING TRANSFER FINISHED ACK FOR ", keys)
 
-	log.Println(sendingTransfers)
 	removed := removeSendingTransfer(keys)
-
 	if !removed {
 		log.Fatal("ERROR: Unexpected HandleDataTransferFinishedAck ", util.CreateAddressStringFromAddr(sender), keys)
 	}

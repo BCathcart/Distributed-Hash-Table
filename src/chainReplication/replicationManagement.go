@@ -17,10 +17,10 @@ import (
 	The high parameter will be the node's hashed key, and the low parameter
 	Will be the previous node's hashed key.
 	In the case that there is no predecessor or the node is the third predecessor,
-	the low parameter will be set to the current key.
+	the low parameter will be set to the current key + 1.
 */
 
-const TRANSFER_TIMEOUT = 10 //sec
+const TRANSFER_TIMEOUT = 20 //sec
 const MAX_TRANSFER_REQ_RETRIES = 5
 
 type successorNode struct {
@@ -40,55 +40,35 @@ func (p *predecessorNode) getKeys() util.KeyRange {
 	return util.KeyRange{}
 }
 
-/*** START NEW STUFF ***/
-var MyKeys util.KeyRange
-
-// Current range we have keys for
-var currentRange util.KeyRange
-
-// Range of keys we are responsible for storing (may not have all the keys yet)
-// - if the the key range grows, start requests for the new keys
-// - if the key range shrinks, drop all keys outside the range
-var responsibleRange util.KeyRange
-
 type expectedTransferInfo struct {
 	keys    util.KeyRange
 	retries uint8
 }
 
-// Expected transfer requests
-// We periodically send these to our predecessor until we receive
-// a transfer finished
+/* Key range this node is the coordinator for */
+var MyKeys util.KeyRange
+
+/* Current range we have keys for */
+var currentRange util.KeyRange
+
+/* Range of keys we are responsible for storing (may not have all the keys yet)
+ * - if the the key range grows, start requests for the new keys
+ * - if the key range shrinks, drop all keys outside the range
+ */
+var responsibleRange util.KeyRange
+
+/* Transfers we believe we need. We periodically send these
+ * to our predecessor until we receive a transfer finished msg. */
 var expectedTransfers []*expectedTransferInfo
 
+/* Transfers we are currently sending to our successor */
 var sendingTransfers []util.KeyRange
-
-/*** END NEW STUFF ***/
-
-// type pendingTransferInfo struct {
-// 	receiver    *net.Addr
-// 	coordinator *net.Addr
-// 	keys        util.KeyRange
-// 	timer       *time.Timer
-// }
-
-// type expectedTransferInfo struct {
-// 	coordinator *net.Addr
-// 	timer       *time.Timer
-// }
 
 // 0 = first, 1 = second, 2 = third (not part of the chain but necessary to get lower bound)
 var predecessors [3]*predecessorNode
 var successor *successorNode
 
 var MyAddr *net.Addr
-
-// var MyKeys util.KeyRange
-
-// var pendingTransfers []*pendingTransferInfo
-// var expectedTransfers []*expectedTransferInfo
-
-var replicaRanges []util.KeyRange // 0 = first predecessor, 1 = second predecessor
 
 var coarseLock sync.RWMutex // TODO: add finer-grained locks for M3
 
@@ -100,7 +80,6 @@ func Init(addr *net.Addr) {
 	go func() {
 		for {
 			<-ticker.C
-			// resendPendingTransfers()
 			resendExpectedTransfer()
 		}
 	}()
@@ -118,27 +97,15 @@ func SetKeyRange(keylow uint32, keyhigh uint32) {
 	currentRange = MyKeys
 	responsibleRange = MyKeys
 
-	log.Println("Setting Key Range:")
-	log.Println(MyKeys)
-	log.Println(responsibleRange)
-	log.Println(currentRange)
+	log.Println("INFO: Setting key range")
+	printKeyState(nil)
 }
 
-/* Replication Management Helpers */
-// func resendPendingTransfers() {
-// 	coarseLock.Lock()
-// 	defer coarseLock.Unlock()
-
-// 	for _, transfer := range pendingTransfers {
-// 		payload := util.SerializeAddr(transfer.coordinator)
-// 		log.Println("INFO: SENDING TRANSFER REQUEST FOR", (*transfer.coordinator).String())
-// 		requestreply.SendTransferReq(payload, transfer.receiver)
-// 	}
-// }
-
-func updateCurrentRange(lowKey uint32) {
+func updateCurrentRange(lowKey uint32, runNextEvent bool) {
 	currentRange.Low = lowKey // TODO: verify this is always correct (there are never gaps in the key range)
-	go runNextReplicationEvent()
+	if runNextEvent {
+		go runNextReplicationEvent()
+	}
 }
 
 func resendExpectedTransfer() {
@@ -162,13 +129,10 @@ func addExpectedTransfer(keys util.KeyRange) {
 }
 
 func removeExpectedTransfer(keys util.KeyRange) bool {
-	log.Println("removeExpectedtransfer() - 1 ", expectedTransfers)
-	log.Println(keys)
 	for i, transfer := range expectedTransfers {
 		transferKeys := transfer.keys
 		if transferKeys.Low == keys.Low && transferKeys.High == keys.High {
 			expectedTransfers = removeExpectedTransferFromArr(expectedTransfers, i)
-			log.Println("removeExpectedtransfer() -2 ", transferKeys)
 			return true
 		}
 	}
@@ -193,8 +157,9 @@ func delayedRemoveSendingTransfer(keys util.KeyRange, delaySecs time.Duration) {
 	timer := time.NewTimer(delaySecs * time.Second)
 	go func() {
 		<-timer.C
-		log.Println("WARN: Delayed removing sending transfer")
-		removeSendingTransfer(keys)
+		if removeSendingTransfer(keys) {
+			log.Println("WARN: Transfer finished message timed out (no ACK received), ", keys)
+		}
 	}()
 }
 
@@ -243,16 +208,6 @@ func expectingTransferFor(key uint32) bool {
 		!util.BetweenKeys(key, currentRange.Low, currentRange.Low)
 }
 
-// func expectingTransferFrom(addr *net.Addr) bool {
-// 	for _, transfer := range expectedTransfers {
-// 		if strings.Compare((*transfer.coordinator).String(), (*addr).String()) == 0 {
-// 			return true
-// 		}
-// 	}
-
-// 	return false
-// }
-
 /*
 	Helper function for getting predecessor address.
 */
@@ -270,97 +225,13 @@ func getPredKey(predNode *predecessorNode) uint32 {
 	return predNode.keys.High
 }
 
-// func addPendingTransfer(receiver *net.Addr, coordinator *net.Addr, keys util.KeyRange) {
-// 	timer := time.NewTimer(time.Duration(TRANSFER_TIMEOUT) * time.Second)
-// 	transfer := &pendingTransferInfo{receiver, coordinator, keys, timer}
-// 	go func() {
-// 		<-timer.C
-// 		coarseLock.Lock()
-// 		defer coarseLock.Unlock()
-// 		if coordinator != nil {
-// 			log.Println("WARN: Pending transfer timed out for ", util.CreateAddressStringFromAddr(coordinator))
-// 			removePendingTransfer(coordinator)
-// 		}
-// 	}()
-// 	removePendingTransfer(transfer.coordinator)
-// 	pendingTransfers = append(pendingTransfers, transfer)
-// }
-
-// func addExpectedTransfer(coordinator *net.Addr) {
-// 	timer := time.NewTimer(time.Duration(TRANSFER_TIMEOUT) * time.Second)
-// 	transfer := &expectedTransferInfo{coordinator, timer}
-// 	go func() {
-// 		<-timer.C
-// 		coarseLock.Lock()
-// 		defer coarseLock.Unlock()
-// 		if coordinator != nil {
-// 			log.Println("WARN: Expected transfer timed out for ", util.CreateAddressStringFromAddr(coordinator))
-// 			removeExpectedTransfer(coordinator)
-// 		}
-// 	}()
-// 	removeExpectedTransfer(coordinator)
-// 	expectedTransfers = append(expectedTransfers, transfer)
-// }
-
-// func removePendingTransfer(coorAddr *net.Addr) {
-// 	if coorAddr == nil {
-// 		return
-// 	}
-
-// 	for i, transfer := range pendingTransfers {
-// 		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(coorAddr) {
-// 			pendingTransfers[i].timer.Stop()
-// 			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
-// 			return
-// 		}
-// 	}
-// }
-
-// func removePendingTransfersToAMember(memAddr *net.Addr) {
-// 	for i, transfer := range pendingTransfers {
-// 		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(memAddr) {
-// 			pendingTransfers = removePendingTransferInfoFromArr(pendingTransfers, i)
-// 		}
-// 	}
-// }
-
-// func removeExpectedTransfer(coorAddr *net.Addr) bool {
-// 	if coorAddr == nil {
-// 		return false
-// 	}
-
-// 	for i, transfer := range expectedTransfers {
-// 		if util.CreateAddressStringFromAddr(transfer.coordinator) == util.CreateAddressStringFromAddr(coorAddr) {
-// 			transfer.timer.Stop()
-// 			expectedTransfers = removeExpectedTransferInfoFromArr(expectedTransfers, i)
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
-// func removePendingTransferInfoFromArr(s []*pendingTransferInfo, i int) []*pendingTransferInfo {
-// 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
-// 	return s[:len(s)-1]
-// }
-
-// func removeExpectedTransferInfoFromArr(s []*expectedTransferInfo, i int) []*expectedTransferInfo {
-// 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
-// 	return s[:len(s)-1]
-// }
-
-// func printState() {
-// 	log.Println("Pending transfers to send: ")
-// 	for _, transfer := range pendingTransfers {
-// 		log.Println((*transfer.coordinator).String())
-// 	}
-// 	log.Println("Expected transfer to receive: ")
-// 	for _, transfer := range expectedTransfers {
-// 		log.Println((*transfer.coordinator).String())
-// 	}
-// 	log.Println("Predecessors:", getPredAddrForPrint())
-
-// 	if successor != nil {
-// 		log.Println("Successor: ", (*successor.addr).String())
-// 	}
-// }
+func printKeyState(newRange *util.KeyRange) {
+	log.Println("\nKeys State:")
+	log.Println("MyKeys=", MyKeys)
+	log.Println("responsibleRange=", responsibleRange)
+	log.Println("currentRange=", currentRange)
+	if newRange != nil {
+		log.Println("newRange=", *newRange)
+	}
+	log.Println()
+}

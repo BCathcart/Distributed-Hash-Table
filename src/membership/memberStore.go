@@ -192,7 +192,10 @@ func (ms *MemberStore) setStatus(addr *net.Addr, status int) {
 		log.Println((*addr).String(), "was not in member store!")
 		return
 	}
-	ms.members[idx].Status = int32(status)
+	if ms.members[idx].Status != int32(status) {
+		log.Println("Updating member to UNAVAILABLE: ", *addr)
+		ms.members[idx].Status = int32(status)
+	}
 }
 
 func filterForStatusNormal(members []*pb.Member, mypos int) ([]*pb.Member, int) {

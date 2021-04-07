@@ -17,24 +17,19 @@ type ReplicationEvent struct {
 	addr *net.Addr
 }
 
-var queue = make(chan ReplicationEvent, 100) // TODO: shrink after testing
+var queue = make(chan ReplicationEvent, 20) // TODO: shrink after testing
 
 func putReplicationEvent(code uint8, keys util.KeyRange, addr *net.Addr) {
-	log.Println("\n\n putReplicationEvent() - 1\n\n")
 	queue <- ReplicationEvent{code, keys, addr}
-	log.Println("\n\n putReplicationEvent() - 2\n\n")
 }
 
 func runNextReplicationEvent() {
-	log.Println("\n\nrunNextReplicationEvent() - 1\n\n")
 	event := <-queue
-	log.Println("\n\nrunNextReplicationEvent() - 2 ", event, "\n\n")
-
 	if event.code == TRANSFER {
 		sendDataTransferReq(event.addr, event.keys, false, false)
 	} else if event.code == SWEEP {
 		kvstore.Sweep(event.keys, func() {
-			updateCurrentRange(event.keys.High)
+			updateCurrentRange(event.keys.High, true)
 		})
 	} else {
 		log.Fatal("ERROR: Unknown ReplicationEvent code")

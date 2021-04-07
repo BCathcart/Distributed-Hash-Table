@@ -157,7 +157,6 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
 	memberStore_.lock.Lock()
 	updateChain(&memberStore_.lock)
-	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
 }
 
 /*
