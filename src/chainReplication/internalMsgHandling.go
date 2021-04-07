@@ -129,6 +129,11 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 	keys := util.DeserializeKeyRange(msg.Payload)
 	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", keys)
 
+	if expectedTransfers[0] == nil {
+		log.Fatal("ERROR: No transfers ecpected - received transfer for ", keys)
+		return nil
+	}
+
 	// NOTE: we only have one expected transfer at a time right now
 	if expectedTransfers[0].keys.High != keys.High {
 		log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
