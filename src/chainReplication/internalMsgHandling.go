@@ -121,6 +121,11 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
+	if msg.Payload == nil {
+		log.Println("ERROR: HandleTransferFinishedMsg - Payload can't be null")
+		return nil
+	}
+
 	keys := util.DeserializeKeyRange(msg.Payload)
 	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", keys)
 

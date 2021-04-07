@@ -2,7 +2,6 @@ package util
 
 import (
 	"encoding/binary"
-	"fmt"
 	"hash/crc32"
 	"log"
 	"net"
@@ -70,12 +69,8 @@ func DeserializeKeyRangeTranReq(serKeyRange []byte) (KeyRange, bool) {
 func SerializeKeyRange(keys KeyRange) []byte {
 	serLow := make([]byte, 4)
 	binary.LittleEndian.PutUint32(serLow, keys.Low)
-	fmt.Println(serLow)
-
 	serHigh := make([]byte, 4)
 	binary.LittleEndian.PutUint32(serHigh, keys.High)
-	fmt.Println(serHigh)
-
 	return append(serLow, serHigh...)
 }
 
