@@ -62,7 +62,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte) {
 	kvReq := &pb.KVRequest{}
 	err = proto.Unmarshal(payload, kvReq)
 
-	putTestReqCacheEntry(string(reqMsg.MessageID), uint8(kvReq.Command), serMsg)
+	putTestReqCacheEntry(string(reqMsg.MessageID), serMsg)
 
 	writeMsg(*addr, serMsg)
 }
