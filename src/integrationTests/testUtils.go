@@ -59,6 +59,10 @@ func sendUDPRequest(addr *net.Addr, payload []byte) {
 	if err != nil {
 		log.Println(err)
 	}
+	kvReq := &pb.KVRequest{}
+	err = proto.Unmarshal(payload, kvReq)
+
+	putTestReqCacheEntry(string(reqMsg.MessageID), uint8(kvReq.Command), serMsg)
 
 	writeMsg(*addr, serMsg)
 }
@@ -105,7 +109,6 @@ func writeMsg(addr net.Addr, msg []byte) {
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.Msg) {
 	log.Println("Processing response")
-	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	testReqCache_.lock.Lock()
 	key := string(resMsg.MessageID)
