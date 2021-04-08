@@ -25,11 +25,11 @@ func shutdownTest() {
 	for _, killPort := range killPorts {
 		sendKeysToPort(baseAddr, killPort, numKeysToSend)
 	}
-
+	log.Println("SLEEPING")
+	time.Sleep(15 * time.Second)
 	for _, killPort := range killPorts {
 		killNode(serverIPaddress, killPort)
 	}
-
 	log.Println("TRYING TO FETCH KEYS NOW")
 	aliveAddr, _ := GetAddr(serverIPaddress, alivePorts[0])
 	fetchPrevKeys(aliveAddr)
