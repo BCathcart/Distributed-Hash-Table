@@ -1,10 +1,10 @@
 package main
 
 import (
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	maps "github.com/ross-oreto/go-list-map"
 	"sync"
 	"time"
-
-	maps "github.com/ross-oreto/go-list-map"
 )
 
 // Cache with lock for concurrent access
@@ -18,6 +18,17 @@ type testReqCacheEntry struct {
 	msg     []byte // serialized message to re-send
 	time    time.Time
 	retries uint8
+	kvReq   *pb.KVRequest
+}
+
+/*
+
+ */
+type putGetCache struct {
+	numPuts        uint32
+	successfulGets uint32
+	failedGets     uint32
+	data           map[string][]byte // Map of keys to values
 }
 
 /**
@@ -28,9 +39,17 @@ func newTestCache() *testCache {
 	cache := new(testCache)
 	cache.data = maps.New()
 	return cache
+} /**
+* Creates and returns a pointer to a new putGetCache
+* @return The putGetCache.
+ */
+func newPutGetCache() *putGetCache {
+	cache := new(putGetCache)
+	cache.data = make(map[string][]byte)
+	return cache
 }
 
-func putTestReqCacheEntry(id string, msg []byte) {
+func putTestReqCacheEntry(id string, msg []byte, kvReq *pb.KVRequest) {
 
 	// generate the key and construct entry
 	testReqCache_.lock.Lock()
@@ -42,10 +61,9 @@ func putTestReqCacheEntry(id string, msg []byte) {
 		reqCacheEntry := req.(testReqCacheEntry)
 		reqCacheEntry.retries++
 		testReqCache_.data.Put(key, reqCacheEntry)
-
 		// Otherwise add a new entry
 	} else {
-		testReqCache_.data.Put(key, testReqCacheEntry{msg, time.Now(), 0})
+		testReqCache_.data.Put(key, testReqCacheEntry{msg, time.Now(), 0, kvReq})
 	}
 	testReqCache_.lock.Unlock()
 }

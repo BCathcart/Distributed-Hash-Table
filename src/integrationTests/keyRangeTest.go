@@ -32,11 +32,9 @@ func printPortFromKey(portKey uint32) {
 */
 func keyRangeTest() {
 	// =========================== CUSTOM PARAMETERS ===========================
-	serverIPaddress := "192.168.1.74"
-	listOfPorts := []int{8080, 8081, 8082, 8083, 8084, 8085, 8086, 8087} // Other ports in system
 	// ======================================================
 	for i := 0; i < len(listOfPorts); i++ {
-		addr, _ := util.GetAddr(serverIPaddress, listOfPorts[i])
+		addr, _ := util.GetAddr(localIPAddress, listOfPorts[i])
 		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
 	}
 	getKeysFromPort()
