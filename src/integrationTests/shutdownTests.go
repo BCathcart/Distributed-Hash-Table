@@ -8,30 +8,41 @@ import (
 
 func shutdownTest() {
 	//============================ CUSTOM PARAMETERS ========================================
-	serverIPaddress := "192.168.1.74"
-	basePort := 8080                                   // Base port client is connecting to.
-	targetPort := 8083                                 // Port where keys will target.
-	listOfPorts := []int{8080, 8081, 8082, targetPort} // Other ports in system
+	//localIPAddress := "192.168.1.74"
+
 	numKeysToSend := 100
 	// Open sockets to the server
 	// ======================================================================//
-
 	for i := 0; i < len(listOfPorts); i++ {
-		addr, _ := util.GetAddr(serverIPaddress, listOfPorts[i])
+		addr, _ := util.GetAddr(localIPAddress, listOfPorts[i])
 		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
 	}
-	baseAddr, _ := GetAddr(serverIPaddress, basePort)
+	baseAddr, _ := GetAddr(localIPAddress, listOfPorts[0])
+	for _, killPort := range targetPorts {
+		sendKeysToPort(baseAddr, killPort, numKeysToSend)
+	}
+	log.Println("SLEEPING Before killing")
+	time.Sleep(15 * time.Second)
+	for _, killPort := range killPorts {
+		killNode(localIPAddress, killPort)
+		time.Sleep(2 * time.Second)
+	}
+	log.Println("Done Killing, TRYING TO FETCH KEYS NOW")
+	aliveAddr, _ := GetAddr(localIPAddress, alivePorts[0])
+	fetchPrevKeys(aliveAddr)
+	log.Println("Done sending fetch requests, sleeping for 20s while waiting for messages to come back")
+	time.Sleep(20 * time.Second)
+	log.Println("DONE SLEEPING")
+	log.Printf("Num Puts: %v\n", putGetCache_.numPuts)
+	log.Printf("Get Successes: %v\n", putGetCache_.successfulGets)
+	log.Printf("Get Failures: %v\n", putGetCache_.failedGets)
+	percentFailed := putGetCache_.failedGets / (putGetCache_.successfulGets + putGetCache_.failedGets) * 100
+	log.Printf("Percentage of failures: %v\n", percentFailed)
+}
 
-	sendToPort(baseAddr, targetPort, numKeysToSend)
-	log.Printf("SENT %v  requests", len(prevRequests))
-	killAddr, _ := GetAddr(serverIPaddress, targetPort)
-	log.Printf("Killing node with address %v", killAddr)
+func killNode(serverIp string, serverPort int) {
+	killAddr, _ := GetAddr(serverIp, serverPort)
+	log.Printf("Killing node with address %v", (*killAddr).String())
 	killPayload := otherRequest(SHUTDOWN)
 	keyValueRequest(killAddr, killPayload)
-	log.Println("TRYING TO FETCH KEYS NOW")
-	fetchPrevKeys(baseAddr)
-	log.Printf("REQUEST CACHE SIZE %v", testReqCache_.data.Len())
-	log.Println("Sleeping while waiting for messages to come back (for debugging, remove later)")
-	time.Sleep(20 * time.Second)
-	//intentionallyCrash()
 }

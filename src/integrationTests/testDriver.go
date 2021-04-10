@@ -15,17 +15,53 @@ import (
 
 var ClientConn *net.PacketConn
 var testReqCache_ *testCache
-var localIPAddr = "192.168.1.74"
-var clientPort = 8089
+var putGetCache_ *putGetCache
 
+// ================ Edit these parameters ================
+var localIPAddress = "192.168.1.74"
+var clientPort = 8089
+var targetPorts = []int{8083} // Ports you want keys to land on. Will get replicated at next two ports
+// Kill Ports & alive ports are only used in the shutdown test
+var killPorts = []int{8083, 8081, 8082} // Ports to kill
+var alivePorts = []int{8080}            // Ports to keep alive
+var listOfPorts = append(alivePorts, killPorts...)
+
+// ========================================================
 func main() {
 	//log.Println(ClientConn.LocalAddr().String())
+	validateParams()
 	testReqCache_ = newTestCache()
+	putGetCache_ = newPutGetCache()
 	connection, _ := net.ListenPacket("udp", ":"+strconv.Itoa(clientPort))
 	ClientConn = &connection
 	//defer ClientConn.Close()
-	//replicationTest() //Uncomment to run these tests
+	//replicationTest() //Work in progress
 	//putGetTests() Work in progress
+	//keyRangeTest() // Run this test first to get your key orders
 	go MsgListener()
 	shutdownTest()
+}
+
+func paramError(errString string) {
+	panic("Parameter error: " + errString)
+}
+func validateParams() {
+	if len(alivePorts) == 0 {
+		paramError("Need to leave one port alive")
+	}
+
+	for _, alivePort := range alivePorts {
+		for _, killPort := range killPorts {
+			if alivePort == killPort {
+				paramError("Can't have port be both alive and to be killed")
+			} else if alivePort == clientPort || killPort == clientPort {
+				paramError("Can't have client port be on list of server ports")
+			}
+		}
+	}
+	for _, targetPort := range targetPorts {
+		if !intInSlice(targetPort, listOfPorts) {
+			paramError("Target port " + strconv.Itoa(targetPort) + " not in list of ports")
+		}
+	}
 }

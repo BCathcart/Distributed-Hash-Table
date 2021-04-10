@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
@@ -59,6 +60,10 @@ func sendUDPRequest(addr *net.Addr, payload []byte) {
 	if err != nil {
 		log.Println(err)
 	}
+	kvReq := &pb.KVRequest{}
+	err = proto.Unmarshal(payload, kvReq)
+
+	putTestReqCacheEntry(string(reqMsg.MessageID), serMsg, kvReq)
 
 	writeMsg(*addr, serMsg)
 }
@@ -105,7 +110,6 @@ func writeMsg(addr net.Addr, msg []byte) {
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.Msg) {
 	log.Println("Processing response")
-	//util.PrintInternalMsg(resMsg)
 	// Get cached request (ignore if it's not cached)
 	testReqCache_.lock.Lock()
 	key := string(resMsg.MessageID)
@@ -115,6 +119,10 @@ func processResponse(senderAddr net.Addr, resMsg *pb.Msg) {
 		res := &pb.KVResponse{}
 		proto.Unmarshal(resMsg.Payload, res)
 		log.Println("Received response", resMsg.MessageID, "for value", kvstore.BytetoInt(res.GetValue()))
+		trcKVReq := req.(testReqCacheEntry).kvReq
+
+		putGetCheck(trcKVReq, res)
+
 		//**************************************/
 		testReqCache_.data.Delete(key)
 
@@ -127,4 +135,31 @@ func processResponse(senderAddr net.Addr, resMsg *pb.Msg) {
 		//***************************************/
 	}
 	testReqCache_.lock.Unlock()
+}
+
+func putGetCheck(req *pb.KVRequest, res *pb.KVResponse) {
+	if req.Command == PUT {
+		putGetCache_.data[string(req.Key)] = req.Value
+		putGetCache_.numPuts++
+	} else if req.Command == GET {
+		if res.ErrCode == kvstore.NOT_FOUND {
+			log.Println("ERR: Couldn't find value for key: " + string(req.Key))
+			putGetCache_.failedGets++
+		} else if bytes.Compare(putGetCache_.data[string(req.Key)], res.Value) != 0 {
+			log.Printf("ERR: PUT ( %v ) != GET ( %v )", putGetCache_.data[string(req.Key)], res.Value)
+			putGetCache_.failedGets++
+		} else {
+			putGetCache_.successfulGets++
+		}
+	}
+
+}
+
+func intInSlice(a int, list []int) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }

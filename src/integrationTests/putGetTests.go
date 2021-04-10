@@ -267,9 +267,7 @@ func keyValueRequest(addr *net.Addr, payload *pb.KVRequest) {
 		fmt.Println("WARN: Marshaling payload error. ", err.Error())
 		return
 	}
-
 	sendUDPRequest(addr, serReqPayload)
-	// Deserialize response
 }
 
 func fillUp(addr *net.Addr, callNum int) {

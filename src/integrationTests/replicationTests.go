@@ -23,7 +23,7 @@ func getPortKV(low uint32, high uint32) *pb.KVRequest {
 	return payload
 }
 
-func sendToPort(addr *net.Addr, targetPort int, numKeys int) {
+func sendKeysToPort(addr *net.Addr, targetPort int, numKeys int) {
 	low, high := getKeyRange(targetPort)
 	for i := 0; i < numKeys; i++ {
 		payload := getPortKV(low, high)
@@ -108,7 +108,7 @@ func replicationTest() {
 		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
 	}
 	baseAddr, _ := GetAddr(serverIPaddress, basePort)
-	sendToPort(baseAddr, targetPort, numKeysToSend)
+	sendKeysToPort(baseAddr, targetPort, numKeysToSend)
 	log.Printf("SENT %v  requests", len(prevRequests))
 	log.Println("TRYING TO FETCH KEYS NOW")
 	fetchPrevKeys(baseAddr)
