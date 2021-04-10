@@ -73,7 +73,7 @@ func gossipHeartbeat(addr *net.Addr) {
 func pingMembers() {
 	memberStore_.lock.RLock()
 	for _, member := range memberStore_.members {
-		if member.Key != memberStore_.mykey {
+		if member.Status == STATUS_NORMAL && member.Key != memberStore_.mykey {
 			addr, _ := util.GetAddr(string(member.Ip), int(member.Port))
 			requestreply.SendPingRequest(addr)
 		}
