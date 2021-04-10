@@ -86,8 +86,6 @@ func GetKeyList() []string {
  * @return a status indicating whether entry was successfully removed or not found
  */
 func RemoveKey(key string) uint32 {
-	kvStore_.lock.Lock()
 	ret := kvStore_.Remove(key)
-	kvStore_.lock.Unlock()
 	return ret
 }
