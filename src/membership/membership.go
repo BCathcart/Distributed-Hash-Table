@@ -208,6 +208,7 @@ func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int
 			<-ticker.C
 			tickHeartbeat()
 			gossipHeartbeat(nil)
+			pingMembers()
 		}
 	}()
 
