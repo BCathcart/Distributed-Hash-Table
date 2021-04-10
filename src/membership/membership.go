@@ -76,7 +76,7 @@ func makeMembershipReq(otherMembers []*net.UDPAddr, thisIP string, thisPort int3
 			log.Println("WARN: cannot send membership request to yourself")
 			if len(otherMembers) <= 1 {
 				log.Println("WARN: We are the first node, waiting to be contacted")
-				memberStore_.getCurrMember().Status = STATUS_NORMAL
+				SetStatusToNormal()
 				break
 			} else {
 				continue
@@ -157,7 +157,27 @@ func MemberUnavailableHandler(addr *net.Addr) {
 	memberStore_.setStatus(addr, STATUS_UNAVAILABLE)
 	memberStore_.lock.Lock()
 	updateChain(&memberStore_.lock)
-	log.Println("Finished updating member to UNAVAILABLE: ", *addr)
+}
+
+/*
+ * Sets this member's status to STATUS_NORMAL and updates the key ranges in the replication layer
+ */
+func SetStatusToNormal() {
+	memberStore_.lock.Lock()
+	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
+
+	// Set key range now that the memberstore info will have been gossiped during bootstrap
+	myKey := memberStore_.mykey
+	var predKey uint32
+	pred := searchForPredecessors(memberStore_.position, 1)[0]
+	if pred != nil {
+		predKey = pred.Key
+	} else {
+		predKey = myKey
+	}
+	chainReplication.SetKeyRange(predKey+1, myKey)
+
+	memberStore_.lock.Unlock()
 }
 
 /*
@@ -180,7 +200,7 @@ func Init(conn *net.PacketConn, otherMembers []*net.UDPAddr, ip string, port int
 	memberStore_.position = 0
 	memberStore_.mykey = key
 	localAddr, _ := util.GetAddr(ip, int(port))
-	chainReplication.Init(localAddr, key+1, key)
+	chainReplication.Init(localAddr)
 	// Update heartbeat every HEARTBEAT_INTERVAL seconds
 	var ticker = time.NewTicker(time.Millisecond * HEARTBEAT_INTERVAL)
 	go func() {

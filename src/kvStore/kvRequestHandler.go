@@ -229,8 +229,10 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 /*
 * Deletes all keys in the kvStore within the key range
  */
-func Sweep(keys util.KeyRange) {
+func Sweep(keys util.KeyRange, callback func()) {
+	log.Println("INFO: Sweeping keys ", keys)
 	kvStore_.WipeoutKeys(keys)
+	callback()
 }
 
 /*

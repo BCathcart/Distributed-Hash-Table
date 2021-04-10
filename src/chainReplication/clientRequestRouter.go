@@ -100,9 +100,9 @@ func handleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 
 		return successor.addr, nil, true, err
 	}
-	headAddr, headKeys := getHead()
+	_, headKeys := getHead()
 	// GET responded to here if they correspond to the HEAD
-	if headKeys.IncludesKey(key) && kvstore.IsGetRequest(kvRequest) && !expectingTransferFrom(headAddr) {
+	if headKeys.IncludesKey(key) && kvstore.IsGetRequest(kvRequest) && !expectingTransferFor(key) {
 		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, headKeys)
 		return nil, payload, true, err
 	}
