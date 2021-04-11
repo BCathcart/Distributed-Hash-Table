@@ -43,9 +43,11 @@ func getPortFromKey(portKey uint32) int {
 */
 func getPortForSentKey(key int) int {
 	keyList := getSortedKeyList()
+	//print(keyList)
+	//print(key)
 	for _, value := range keyList {
 		keyListPort := getPortFromKey(uint32(value))
-		if key < keyListPort {
+		if key < value {
 			return keyListPort
 		}
 	}

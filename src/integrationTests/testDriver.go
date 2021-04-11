@@ -20,11 +20,11 @@ var putGetCache_ *putGetCache
 // ================ Edit these parameters ================
 var localIPAddress = "192.168.1.74"
 var clientPort = 8090
-var targetPorts = []int{8081, 8082, 8083} // Ports you want keys to land on. Will get replicated at next two ports
+var targetPorts = []int{8081, 8083, 8084} // Ports you want keys to land on. Will get replicated at next two ports
 // Kill Ports & alive ports are only used in the shutdown test
 //var killPorts = []int{8083, 8081, 8082} // Ports to kill
 var killPorts = targetPorts
-var alivePorts = []int{8080, 8084, 8085, 8086, 8087, 8088, 8089} // Ports to keep alive
+var alivePorts = []int{8080, 8082, 8085, 8086, 8087, 8088, 8089} // Ports to keep alive
 var listOfPorts = append(alivePorts, killPorts...)
 
 // ========================================================
