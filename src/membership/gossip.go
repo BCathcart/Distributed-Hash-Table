@@ -69,6 +69,18 @@ func gossipHeartbeat(addr *net.Addr) {
 	}
 }
 
+/* Ping all members */
+func pingMembers() {
+	memberStore_.lock.RLock()
+	for _, member := range memberStore_.members {
+		if member.Key != memberStore_.mykey {
+			addr, _ := util.GetAddr(string(member.Ip), int(member.Port))
+			requestreply.SendPingRequest(addr)
+		}
+	}
+	memberStore_.lock.RUnlock()
+}
+
 /*
 * Compares incoming member array with current member array and updates member info
 * if their heartbeat is newer.
@@ -132,17 +144,17 @@ func updateChain(lock *sync.RWMutex) {
 	memberStore_.lock.Unlock()
 
 	// Send pings to make sure everyone is alive
-	for _, addr := range addresses {
-		if addr != nil {
-			requestreply.SendPingRequest(addr)
-		}
-	}
-	if successor != nil {
-		addr, _ := util.GetAddr(string(successor.Ip), int(successor.Port))
-		if addr != nil {
-			requestreply.SendPingRequest(addr)
-		}
-	}
+	// for _, addr := range addresses {
+	// 	if addr != nil {
+	// 		requestreply.SendPingRequest(addr)
+	// 	}
+	// }
+	// if successor != nil {
+	// 	addr, _ := util.GetAddr(string(successor.Ip), int(successor.Port))
+	// 	if addr != nil {
+	// 		requestreply.SendPingRequest(addr)
+	// 	}
+	// }
 
 	if memberStore_.getCurrMember().Status == STATUS_NORMAL {
 		if successor != nil {

@@ -104,12 +104,12 @@ func handleTimedOutReqCacheEntry(key string, reqCacheEntry *ReqCacheEntry) (*net
 
 	} else if !isClientReq {
 		// Retry internal requests up to INTERNAL_REQ_RETRIES times
-		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries < 10) {
+		if reqCacheEntry.retries < INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries < 4) {
 			log.Println("RE-SENDING MSG of type ", reqCacheEntry.msgType)
 			reSendMsg(key, reqCacheEntry)
 
 			// Handle expired internal requests
-		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries >= 10) {
+		} else if reqCacheEntry.retries == INTERNAL_REQ_RETRIES || (reqCacheEntry.msgType == PING_MSG && reqCacheEntry.retries >= 4) {
 			if reqCacheEntry.msgType == PING_MSG {
 				log.Println("PING_MSG TIMED OUT")
 				go getNodeUnavailableHandler()(reqCacheEntry.addr)

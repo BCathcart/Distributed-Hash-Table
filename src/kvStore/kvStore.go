@@ -1,9 +1,7 @@
 package kvstore
 
 import (
-	"container/list"
 	"log"
-	"strings"
 	"sync"
 
 	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
@@ -12,12 +10,11 @@ import (
 /* KEY VALUE STORE */
 type KVStore struct {
 	lock sync.RWMutex
-	data *list.List
+	data map[string]kventry
 	size uint32
 }
 
 type kventry struct {
-	key string
 	val []byte
 	ver int32
 }
@@ -28,8 +25,7 @@ type kventry struct {
  */
 func NewKVStore() *KVStore {
 	store := new(KVStore)
-	store.data = list.New()
-	store.size = 0
+	store.data = make(map[string]kventry)
 	return store
 }
 
@@ -49,13 +45,9 @@ func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 		return NO_SPACE
 	}
 
-	kvs.Remove(key)
-
-	kvs.data.PushBack(kventry{key: key, val: val, ver: version})
+	kvs.data[key] = kventry{val: val, ver: version}
 	kvs.size += uint32(len(key) + len(val) + 4) // Increase kv store size
-
 	kvs.lock.Unlock()
-
 	return OK
 }
 
@@ -67,16 +59,8 @@ func (kvs *KVStore) Put(key string, val []byte, version int32) uint32 {
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
 func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
-	var found bool
-	var entry kventry
 	kvs.lock.RLock()
-	res := kvs.findListElem(key)
-	if res != nil {
-		found = true
-		entry = *res
-	} else {
-		found = false
-	}
+	entry, found := kvs.data[key]
 	kvs.lock.RUnlock()
 
 	if found {
@@ -92,12 +76,15 @@ func (kvs *KVStore) Get(key string) ([]byte, int32, uint32) {
 * @return OK if the key exists, NOT_FOUND otherwise.
  */
 func (kvs *KVStore) Remove(key string) uint32 {
-	success, n := kvs.removeListElem(key)
-	if success == true {
-		kvs.size -= uint32(n) // Decrease kv store size
+	kvs.lock.Lock()
+	entry, ok := kvs.data[key]
+	if ok == true {
+		delete(kvs.data, key)
+		kvs.size -= uint32(len(key) + len(entry.val) + 4)
 	}
+	kvs.lock.Unlock()
 
-	if success == true {
+	if ok == true {
 		return OK
 	}
 
@@ -111,55 +98,12 @@ func (kvs *KVStore) GetSize() uint32 {
 	return kvs.size
 }
 
-/**
-* * Wipes out the entire KVStore
- */
-func (kvs *KVStore) Wipeout() {
-	kvs.lock.Lock()
-	kvs.data.Init() // Clears the list
-	kvs.size = 0
-	kvs.lock.Unlock()
-}
-
-/**
-* Fetches an element from the key-value store list.
-* @param key The key to search for.
-* @return The kventry if it exists, nil otherwise.
- */
-func (kvs *KVStore) findListElem(key string) *kventry {
-	for e := kvs.data.Front(); e != nil; e = e.Next() {
-		if strings.Compare(e.Value.(kventry).key, key) == 0 {
-			entry := e.Value.(kventry)
-			return &entry
-		}
-	}
-	return nil
-}
-
-/**
-* Removes an element from the key-value store list.
-* @param key The key of the entry to remove.
-* @return The kventry if it exists, nil otherwise.
- */
-func (kvStore_ *KVStore) removeListElem(key string) (bool, int) {
-	for e := kvStore_.data.Front(); e != nil; e = e.Next() {
-		if strings.Compare(e.Value.(kventry).key, key) == 0 {
-			len := len(e.Value.(kventry).key) + len(e.Value.(kventry).val) + 4
-			kvStore_.data.Remove(e)
-			return true, len
-		}
-	}
-	return false, 0
-}
-
 // shay
 /**
 * Getter for a list of all keys stored in kvStore
 * @return keyList A []int with all the keys
  */
 func (kvs *KVStore) getAllKeys() []string {
-	var keyList []string
-
 	kvs.lock.RLock()
 
 	if kvs.GetSize() == 0 {
@@ -167,25 +111,25 @@ func (kvs *KVStore) getAllKeys() []string {
 		return nil
 	}
 
-	for e := kvs.data.Front(); e != nil; e = e.Next() {
-		keyList = append(keyList, e.Value.(kventry).key)
+	i := 0
+	keys := make([]string, len(kvs.data))
+	for k, _ := range kvs.data {
+		keys[i] = k
+		i++
 	}
 
 	kvs.lock.RUnlock()
-	return keyList
+	return keys
 }
 
 func (kvs *KVStore) WipeoutKeys(keys util.KeyRange) {
 	kvs.lock.Lock()
-	var next *list.Element = nil
-	for e := kvs.data.Front(); e != nil; e = next {
-		next = e.Next()
-		key := e.Value.(kventry).key
+	for key, entry := range kvs.data {
 		if keys.IncludesKey(util.Hash([]byte(key))) {
-			kvStore_.size -= uint32(len(e.Value.(kventry).key) + len(e.Value.(kventry).val) + 4)
-			kvStore_.data.Remove(e)
+			delete(kvs.data, key)
+			kvs.size -= uint32(len(key) + len(entry.val) + 4)
 		}
 	}
 	kvs.lock.Unlock()
-	log.Println("LEN KV STORE = ", kvStore_.data.Len())
+	log.Println("LEN KV STORE = ", len(kvs.data))
 }

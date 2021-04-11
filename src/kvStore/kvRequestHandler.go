@@ -144,9 +144,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
-			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
-			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
@@ -211,9 +209,7 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 		}
 
 	case REMOVE:
-		kvStore_.lock.Lock()
 		errCode = kvStore_.Remove(key)
-		kvStore_.lock.Unlock()
 
 	default:
 		return errors.New("Command is not an update")
@@ -239,7 +235,7 @@ func Sweep(keys util.KeyRange, callback func()) {
 * PrintKVStoreSize prints out number of elements of the kvstore
  */
 func PrintKVStoreSize() {
-	log.Print("\n\n\n =======SIZE:===============", kvStore_.data.Len(), "=========\n\n\n")
+	log.Print("\n\n\n =======SIZE:===============", len(kvStore_.data), "=========\n\n\n")
 }
 
 /**
