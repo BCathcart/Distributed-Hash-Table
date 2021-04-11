@@ -141,14 +141,17 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 	} else if expectedTransfers[0].keys.Low == keys.Low {
 		removed := removeExpectedTransfer(keys)
 		if !removed {
-			log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
-				". Expected transfers ", expectedTransfers)
+			log.Println("WARN: Unexpected HandleTransferFinishedMsg ", keys,
+				". Expected transfers: ")
+			for _, transfer := range expectedTransfers {
+				log.Println(*transfer)
+			}
 		}
 		updateCurrentRange(keys.Low, true)
 	} else {
 		// We received a partial transfer, update the expected transfer
 		log.Println("INFO: We received a partial transfer ", keys)
-		expectedTransfers[0].keys.High = keys.Low
+		expectedTransfers[0].keys.High = keys.Low - 1
 		updateCurrentRange(keys.Low, false)
 	}
 
