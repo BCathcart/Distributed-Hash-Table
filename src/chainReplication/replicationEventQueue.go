@@ -29,7 +29,9 @@ func runNextReplicationEvent() {
 		sendDataTransferReq(event.addr, event.keys, false, false)
 	} else if event.code == SWEEP {
 		kvstore.Sweep(event.keys, func() {
+			coarseLock.Lock()
 			updateCurrentRange(event.keys.High, true)
+			coarseLock.Unlock()
 		})
 	} else {
 		log.Fatal("ERROR: Unknown ReplicationEvent code")

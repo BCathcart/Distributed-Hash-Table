@@ -125,6 +125,8 @@ func resendExpectedTransfer() {
 
 func addExpectedTransfer(keys util.KeyRange) {
 	// TODO: check keys already exist (should hopefully not be necessary but is good just in case)
+	coarseLock.Lock()
+	defer coarseLock.Unlock()
 	expectedTransfers = append(expectedTransfers, &expectedTransferInfo{keys, 0})
 }
 
@@ -191,6 +193,9 @@ func getPredAddrForPrint() []string {
 
 // @return the keyrange for the HEAD of the current chain
 func getHead() (*net.Addr, util.KeyRange) {
+	coarseLock.RLock()
+	defer coarseLock.RUnlock()
+
 	head := predecessors[1]
 	if head == nil {
 		head = predecessors[0]

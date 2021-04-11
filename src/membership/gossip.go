@@ -55,12 +55,13 @@ func gossipHeartbeat(addr *net.Addr) {
 	for i, member := range memberStore_.members {
 		members.Members[i] = member
 	}
-	memberStore_.lock.RUnlock()
 	gspPayload, err := proto.Marshal(members)
 	if err != nil {
 		log.Println(err)
+		memberStore_.lock.RUnlock()
 		return
 	}
+	memberStore_.lock.RUnlock()
 
 	err = requestreply.SendHeartbeatMessage(gspPayload, ip, port)
 	if err != nil {
