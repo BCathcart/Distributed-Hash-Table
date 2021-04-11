@@ -33,11 +33,15 @@ func shutdownTest() {
 	log.Println("Done sending fetch requests, sleeping for 20s while waiting for messages to come back")
 	time.Sleep(20 * time.Second)
 	log.Println("DONE SLEEPING")
-	log.Printf("Num Puts: %v\n", putGetCache_.numPuts)
+	totalPuts := putGetCache_.numPuts
+	log.Printf("Num Puts: %v\n", totalPuts)
 	log.Printf("Get Successes: %v\n", putGetCache_.successfulGets)
 	log.Printf("Get Failures: %v\n", putGetCache_.failedGets)
-	percentFailed := putGetCache_.failedGets / (putGetCache_.successfulGets + putGetCache_.failedGets) * 100
-	log.Printf("Percentage of failures: %v\n", percentFailed)
+	totalGets := putGetCache_.successfulGets + putGetCache_.failedGets
+	percentFailed := 100.0 * putGetCache_.failedGets / totalGets
+	log.Printf("Percentage of failures: %v%%\n", percentFailed)
+	percentFailed2 := 100.0 * (putGetCache_.failedGets - (totalGets - totalPuts)) / totalGets
+	log.Printf("Percentage of failures (excluding failed puts): %v%% \n", percentFailed2)
 }
 
 func killNode(serverIp string, serverPort int) {

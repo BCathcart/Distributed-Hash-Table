@@ -56,7 +56,6 @@ func fetchPrevKeys(addr *net.Addr) {
 		payload := getRequest(targetKey)
 		log.Println(payload.Key)
 		keyValueRequest(addr, payload)
-		//handleKVRequest(status, kvRes)
 	}
 }
 

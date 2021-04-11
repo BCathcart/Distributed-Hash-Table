@@ -109,7 +109,7 @@ func writeMsg(addr net.Addr, msg []byte) {
 * @param handler The message handler callback.
  */
 func processResponse(senderAddr net.Addr, resMsg *pb.Msg) {
-	log.Println("Processing response")
+	//log.Println("Processing response")
 	// Get cached request (ignore if it's not cached)
 	testReqCache_.lock.Lock()
 	key := string(resMsg.MessageID)
@@ -143,7 +143,8 @@ func putGetCheck(req *pb.KVRequest, res *pb.KVResponse) {
 		putGetCache_.numPuts++
 	} else if req.Command == GET {
 		if res.ErrCode == kvstore.NOT_FOUND {
-			log.Println("ERR: Couldn't find value for key: " + string(req.Key))
+			keyInt := util.Hash(req.Key)
+			log.Println("ERR: Couldn't find value for key: " + string(req.Key) + ", associated Port: " + strconv.Itoa(getPortForSentKey(int(keyInt))))
 			putGetCache_.failedGets++
 		} else if bytes.Compare(putGetCache_.data[string(req.Key)], res.Value) != 0 {
 			log.Printf("ERR: PUT ( %v ) != GET ( %v )", putGetCache_.data[string(req.Key)], res.Value)
