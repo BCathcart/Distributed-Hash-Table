@@ -47,13 +47,13 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32) {
 	}
 
 	if newPredecessors[1] != nil {
-		log.Println(1)
+		// log.Println(1)
 		updateRange(util.KeyRange{(*newPredecessors[1]).keys.Low, MyKeys.High}, (*newPredecessors[0]).addr)
 	} else if newPredecessors[0] != nil {
-		log.Println(2)
+		// log.Println(2)
 		updateRange(util.KeyRange{(*newPredecessors[0]).keys.Low, MyKeys.High}, (*newPredecessors[0]).addr)
 	} else {
-		log.Println(3)
+		// log.Println(3)
 		updateRange(util.KeyRange{MyKeys.High + 1, MyKeys.High}, nil)
 	}
 

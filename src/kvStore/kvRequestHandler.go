@@ -119,7 +119,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 		}
 
 		//DEBUGGING
-		log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
+		// log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -137,8 +137,13 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 			errCode = code
 		}
 
+		if errCode == NOT_FOUND {
+			log.Println("Key not found!")
+			log.Println(util.Hash([]byte(key)))
+		}
+
 		//DEBUGGING
-		log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
+		// log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {

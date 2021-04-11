@@ -55,7 +55,6 @@ func SendTransferFinished(payload []byte, addr *net.Addr) {
 
 //SendDataTransferMessage - sends a key-value pair (i.e. an internal PUT request)
 func SendDataTransferMessage(payload []byte, addr *net.Addr) {
-	log.Println("Sending transfer message to ", (*addr).String())
 	sendUDPRequest(addr, payload, DATA_TRANSFER_MSG)
 }
 

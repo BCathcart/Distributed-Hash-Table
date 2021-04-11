@@ -210,7 +210,7 @@ func getHead() (*net.Addr, util.KeyRange) {
 
 func expectingTransferFor(key uint32) bool {
 	return util.BetweenKeys(key, responsibleRange.Low, responsibleRange.High) &&
-		!util.BetweenKeys(key, currentRange.Low, currentRange.Low)
+		!util.BetweenKeys(key, currentRange.Low, currentRange.High)
 }
 
 /*

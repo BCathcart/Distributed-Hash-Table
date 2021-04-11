@@ -494,7 +494,7 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		if resMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ {
 			//update the cache to make request available
 			//assumes no failure!!!
-			log.Println("Received response from", senderAddr.String(), "updating rescache entry")
+			// log.Println("Received response from", senderAddr.String(), "updating rescache entry")
 			updated := setReadyResCacheEntry(resMsg.MessageID)
 			if !updated {
 				log.Println("WARN: the cached response for updated chain request from", senderAddr.String(), "was not found")
@@ -556,7 +556,7 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 
 	// Add to request cache
 	// don't cache membership requests and transfer requests because we don't expect a response
-	if internalID != MEMBERSHIP_REQ && internalID != TRANSFER_REQ {
+	if internalID != MEMBERSHIP_REQ && internalID != TRANSFER_REQ && internalID != DATA_TRANSFER_MSG {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 

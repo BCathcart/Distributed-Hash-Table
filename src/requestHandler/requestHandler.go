@@ -56,6 +56,7 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 		if err != nil {
 			log.Println("ERROR: Could not handle data transfer message - ", err)
 		}
+		respond = false
 
 	case requestreply.PING_MSG:
 		// Send nil payload back

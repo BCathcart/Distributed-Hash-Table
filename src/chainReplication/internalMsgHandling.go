@@ -46,7 +46,7 @@ func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 
 	// For now, let's only allow one transfer at a time for easier debugging
 	if len(sendingTransfers) > 0 {
-		log.Println("WARN: Dropping transfer req b/c only allowing one transfer at a time")
+		log.Println("WARN: Dropping transfer req b/c only allowing one transfer at a time ", sendingTransfers[0])
 		return
 	}
 
@@ -110,6 +110,8 @@ func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 		log.Println("INFO: SENDING TRANSFER FINISHED to ", (*succAddr).String(), " FOR ", keys)
 
 		requestreply.SendTransferFinished(util.SerializeKeyRange(keys), succAddr)
+
+		time.Sleep(250 * time.Millisecond)
 
 		// Time out after 10 seconds (successor can then request again).
 		// Assuming everything is working properly, this likely means the successor failed and that
@@ -190,6 +192,6 @@ func HandleDataTransferFinishedAck(sender *net.Addr, msg *pb.InternalMsg) {
 
 	removed := removeSendingTransfer(keys)
 	if !removed {
-		log.Fatal("ERROR: Unexpected HandleDataTransferFinishedAck ", util.CreateAddressStringFromAddr(sender), keys)
+		log.Println("ERROR: Unexpected HandleDataTransferFinishedAck ", util.CreateAddressStringFromAddr(sender), keys)
 	}
 }
