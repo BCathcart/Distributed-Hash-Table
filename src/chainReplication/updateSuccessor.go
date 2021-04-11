@@ -15,6 +15,8 @@ import (
  * @param maxKey The end of the successor's key range
  */
 func UpdateSuccessor(succAddr *net.Addr, minKey uint32, maxKey uint32) {
+	coarseLock.RLock()
+	defer coarseLock.RUnlock()
 
 	if succAddr == nil {
 		return

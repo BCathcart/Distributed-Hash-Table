@@ -44,6 +44,12 @@ func HandleTransferReq(senderAddr *net.Addr, msg *pb.InternalMsg) {
 	coarseLock.Lock()
 	defer coarseLock.Unlock()
 
+	// For now, let's only allow one transfer at a time for easier debugging
+	if len(sendingTransfers) > 0 {
+		log.Println("WARN: Dropping transfer req b/c only allowing one transfer at a time")
+		return
+	}
+
 	if msg.Payload == nil {
 		log.Println("ERROR: HandleTransferReq - Payload can't be null")
 		return
@@ -129,8 +135,8 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 	keys := util.DeserializeKeyRange(msg.Payload)
 	log.Println("RECEIVING TRANSFER FINISHED MSG FOR ", keys)
 
-	if expectedTransfers[0] == nil {
-		log.Fatal("ERROR: No transfers ecpected - received transfer for ", keys)
+	if len(expectedTransfers) == 0 {
+		log.Println("ERROR: No transfers expected - received transfer for ", keys)
 		return nil
 	}
 

@@ -88,15 +88,20 @@ func handleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 
 	key := util.Hash(kvRequest.GetKey())
 
+	coarseLock.RLock()
+	myKeys := MyKeys
+	succAddr := successor.addr
+	coarseLock.RUnlock()
+
 	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
-	if MyKeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
-		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, MyKeys)
+	if myKeys.IncludesKey(key) && kvstore.IsUpdateRequest(kvRequest) {
+		payload, err, errcode := kvstore.RequestHandler(kvRequest, 1, myKeys)
 		if errcode != kvstore.OK || successor == nil {
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
 		}
 
-		log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
+		log.Println("Forwarding Chain update for key", key, "to", (*succAddr).String())
 
 		return successor.addr, nil, true, err
 	}
