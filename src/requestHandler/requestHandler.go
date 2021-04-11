@@ -42,6 +42,9 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 			membership.BootstrapTransferFinishedHandler()
 		} else {
 			payload = chainReplication.HandleTransferFinishedMsg(msg)
+			if payload == nil {
+				respond = false
+			}
 		}
 
 	case requestreply.TRANSFER_REQ:
