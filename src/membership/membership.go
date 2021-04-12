@@ -109,6 +109,7 @@ Otherwise, forward the membership request there to start the transfer
 @param InternalMsg the internal message being sent
 */
 func MembershipReqHandler(addr net.Addr, msg *pb.InternalMsg) {
+
 	// Send heartbeat to the node requesting
 	gossipHeartbeat(&addr)
 
@@ -175,9 +176,10 @@ func SetStatusToNormal() {
 	} else {
 		predKey = myKey
 	}
+	memberStore_.lock.Unlock()
+
 	chainReplication.SetKeyRange(predKey+1, myKey)
 
-	memberStore_.lock.Unlock()
 }
 
 /*

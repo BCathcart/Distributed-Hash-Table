@@ -46,6 +46,11 @@ func UpdatePredecessors(addr []*net.Addr, keys []uint32) {
 		}
 	}
 
+	if MyKeys.Low == 0 && MyKeys.High == 0 {
+		log.Println("WARN: Keys have not been set yet")
+		return
+	}
+
 	if newPredecessors[1] != nil {
 		// log.Println(1)
 		updateRange(util.KeyRange{(*newPredecessors[1]).keys.Low, MyKeys.High}, (*newPredecessors[0]).addr)

@@ -18,6 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var bootstrap_flag = true
+
 /**
 * Passes external messages to the appropriate handler function
  */
@@ -38,7 +40,8 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	case requestreply.TRANSFER_FINISHED_MSG:
 
-		if membership.IsBootstrapping() {
+		if membership.IsBootstrapping() || bootstrap_flag {
+			bootstrap_flag = false
 			membership.BootstrapTransferFinishedHandler()
 		} else {
 			payload = chainReplication.HandleTransferFinishedMsg(msg)

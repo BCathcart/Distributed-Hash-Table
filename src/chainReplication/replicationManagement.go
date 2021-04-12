@@ -92,10 +92,12 @@ func Init(addr *net.Addr) {
 }
 
 func SetKeyRange(keylow uint32, keyhigh uint32) {
+	coarseLock.Lock()
 	MyKeys.Low = keylow
 	MyKeys.High = keyhigh
 	currentRange = MyKeys
 	responsibleRange = MyKeys
+	coarseLock.Unlock()
 
 	log.Println("INFO: Setting key range")
 	printKeyState(nil)
