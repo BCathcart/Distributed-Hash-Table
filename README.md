@@ -76,12 +76,15 @@ type ReqCacheEntry struct {
 NOTE: When we heard there would be “low churn”, we incorrectly assumed this meant it was highly unlikely multiple nodes would fail at the same time. With our current design, there is a chance data is lost if two nodes in the same chain fail at the exact same time. Right now we have a push-based system, but we plan to switch to a pull-based system for M3 where each node keeps track of which keyspace it has (including replicas) and hounds their predecessor for a transfer if the keyspace they're responsible for replicating grows.
 
 ## Chain Replication - handling keyspace changes 
-- When a node detects changes to its predecessors / successors, the updatePredecessor and updateSuccessor functions 
-  will determine the appropriate course of action based on the node's relative position to the new / failed node.
-    - In general, a failed predecessor / successor node means that our node will need to transfer some of its keys to a successor node, in order to maintain
-      a replication factor of 3. A new predecessor / successor node joining means that the node is no longer responsible for some of its keys and should remove them from its store.
-    - All scenarios and corresponding actions are listed here: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
-    - These scenarios above are also tested in the replicationManager_test file
+- We updated our transfer system in the chain replication layer to handle any number of node failures at the same time. For M2, our system struggled when more than one node failed at a time.
+- To keep our system easy to reason about when multiple changes happen at the same time, we created a queue for replication events and we handle them sequentially. Replication events are either transfer requests or sweeps (drop unneeded keys).
+  - When the handling of the previous event is finished, the next one can proceed
+- When the keyspace the node is responsible for (coordination + replication range) expands, a transfer event is added
+- When the keyspace the node is responsible for (coordination + replication range) shrinks because more nodes joined, a sweep event is added
+- **Sweep Event**: removes all keys in the store outside its responsible range
+- **Transfer Event**: requests a transfer for the keys it is missing from the nodes predecessor
+  - Partial transfers can take place within one transfer event when the predecessor only has some of the keys. Each time a partial transfer is received, the key range being requested is updated accordingly. The requesting node continues waiting for some time expecting the predecessor to obtain the missing keys from its own predecessor.
+- All transfer scenarios when a single node fails and joins are detailed here along with their corresponding actions: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
 
 ## Chain Replication - routing
 - Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which performs the update and then forwards it up the chain
