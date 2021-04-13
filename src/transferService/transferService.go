@@ -19,7 +19,6 @@ Sends a TRANSFER_FINISHED_MSG when it's done
 */
 
 func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
-
 	log.Println("TRANSFERRING KEYS TO MEMBER WITH ADDRESS: ", (*addr).String())
 	localKeyList := kvstore.GetKeyList()
 
@@ -40,9 +39,9 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				continue
 			}
 
-			// log.Println("Sending transfer message to ", (*addr).String(), " with key ", hashVal)
+			log.Println("Sending transfer message to ", (*addr).String(), " with key ", hashVal)
 
-			time.Sleep(10 * time.Microsecond)
+			time.Sleep(1 * time.Millisecond)
 
 			requestreply.SendDataTransferMessage(serPayload, addr)
 
@@ -69,7 +68,7 @@ func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
 		return err
 	}
 
-	// log.Println("Got data transfer message for key ", util.Hash(kvRequest.Key))
+	log.Println("Got data transfer message for key ", util.Hash(kvRequest.Key))
 
 	// TODO: send ack
 

@@ -165,7 +165,7 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 
 	// Artificial delay to make sure any in-flight transfer requests
 	// are handled before ACK is received
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 
 	return msg.Payload
 }

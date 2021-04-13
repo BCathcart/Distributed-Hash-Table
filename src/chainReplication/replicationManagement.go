@@ -144,7 +144,18 @@ func removeExpectedTransfer(keys util.KeyRange) bool {
 }
 
 func addSendingTransfer(keys util.KeyRange) {
-	sendingTransfers = append(sendingTransfers, keys)
+	var exists = false
+	for _, transfer := range sendingTransfers {
+		if transfer.Low == keys.Low && transfer.High == keys.High {
+			exists = true
+			break
+		}
+	}
+	if exists {
+		log.Println("ERROR: Transfer already exists")
+	} else {
+		sendingTransfers = append(sendingTransfers, keys)
+	}
 }
 
 func removeSendingTransfer(keys util.KeyRange) bool {
