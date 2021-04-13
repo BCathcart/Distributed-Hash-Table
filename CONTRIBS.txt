@@ -1,9 +1,6 @@
 BRENNAN
-- Initial membership/gossiping/failure detection design
-- Request/reply layer
-- Replica transfers when a node's successor updates
-- Bootstrapping protocol
-- Much debug
+- Redesigned transfer service
+- Updated KVStore to be map-based
 ROZHAN
 - Chain replication routing and response handling
 - request/reply layer modifications
