@@ -88,8 +88,7 @@ NOTE: When we heard there would be “low churn”, we incorrectly assumed this 
 
 ## Chain Replication - routing
 - Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which performs the update and then forwards it up the chain
-- GET requests are routed to the tail. The tail node then responds to the client directly, and sends the response back down the chain, which gets 
-- forwarded back to the tail.
+- GET requests are routed to the tail. The tail node then responds to the client directly, and sends the response back down the chain, which gets forwarded back to the tail.
 - All other client requests (that are not key-value requests) are handled at the receiving node.
 
 ## Sequential Consistency
