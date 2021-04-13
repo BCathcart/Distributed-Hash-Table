@@ -94,8 +94,7 @@ NOTE: When we heard there would be “low churn”, we incorrectly assumed this 
 
 ## Sequential Consistency
 - In order to achieve sequential consistency, updates and GET requests that are routed to each node are queued and processed in order of receipt. However, the current design does not guarrantee that update requests reach the successor in the same order and arbitrary communication delays could cause violations to sequential consistency. 
-- Note: To remedy this, a modified protocol was implemented in m2-responsehandling in which the head node waits for a response from the tail (which is routed through the seond node in the chain) that it has received the update before proceeding with the next update. If any node in the chain fails to process the request or the head does not receive a response within a specified timeout period, the head node reverses the update operation and moves on to the next request. The second node in the chain behaves similarly if it does not receive a response from the tail. Due to insufficient testing, this modification was not included in the milestone2 submission. 
-
+- 
 ## Integration Testing
 ### Overview
 - To help test our code, we extended the client from the individual programming assignments.
@@ -137,4 +136,4 @@ Our throughput scales approximately linearly with 35 servers on micro instances 
 | 256 | 3515  |
 | 512 | 7100 | 
 
-<ROZSA DISCUSSION>
+To improve the thoughput and reduce the latency introduced by chain replication, a new routing mechanism was implemented in rozsa-primarybackup where the primary server for each key forwards the update requests to two successors and updates the Key-Value store upon successful receipt of a response from the replicas. This implementation is expected improve the throughput due to the request being forwarded to the replicas simultaneously. However, due to insufficient testing, this implementation was not included in the final submission.
