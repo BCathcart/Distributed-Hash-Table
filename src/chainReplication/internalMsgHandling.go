@@ -144,7 +144,7 @@ func HandleTransferFinishedMsg(msg *pb.InternalMsg) []byte {
 
 	// NOTE: we only have one expected transfer at a time right now
 	if expectedTransfers[0].keys.High != keys.High {
-		log.Fatal("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
+		log.Println("ERROR: Unexpected HandleTransferFinishedMsg ", keys,
 			". Expected transfers ", expectedTransfers)
 	} else if expectedTransfers[0].keys.Low == keys.Low {
 		removed := removeExpectedTransfer(keys)
