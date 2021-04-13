@@ -26,7 +26,6 @@ var reqQueue chan request = nil
  */
 func AddRequest(addr *net.Addr, msg *pb.InternalMsg) {
 	if len(reqQueue) < cap(reqQueue) {
-		// log.Println("Adding request to queue", len(reqQueue))
 		reqQueue <- request{msg: msg, sender: addr}
 	} else {
 		log.Println("WARN: Request queue full --- Dropping request") //TODO reply to node in chain
@@ -52,7 +51,6 @@ func handleForwardedChainUpdate(kvRequest *pb.KVRequest) (*net.Addr, bool, []byt
 	} else if predecessors[1].getKeys().IncludesKey(key) {
 		ownerKeys = predecessors[1].keys
 	} else {
-		// log.Println("HandleForwardedChainUpdate: the request for key", key, "is not mine!", predecessors[0].getKeys(), predecessors[1].getKeys())
 		return nil, false, nil, false, nil
 	}
 
@@ -65,11 +63,9 @@ func handleForwardedChainUpdate(kvRequest *pb.KVRequest) (*net.Addr, bool, []byt
 
 	if errcode != kvstore.OK {
 		// don't forward if the request failed
-		// log.Println("Replying to Forwarded Chain update REQUEST FAILED")
 		return nil, false, payload, true, err
 	}
 	// otherwise forward the update to the successor
-	// log.Println("Forwarding Chain update for key", key, "to", (*successor.addr).String())
 
 	return successor.addr, false, payload, true, nil
 }
@@ -101,8 +97,6 @@ func handleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 			// don't forward invalid/failed requests
 			return nil, payload, true, err
 		}
-
-		// log.Println("Forwarding Chain update for key", key, "to", (*succAddr).String())
 
 		return successor.addr, nil, true, err
 	}

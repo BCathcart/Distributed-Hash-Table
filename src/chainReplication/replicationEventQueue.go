@@ -34,6 +34,6 @@ func runNextReplicationEvent() {
 			coarseLock.Unlock()
 		})
 	} else {
-		log.Fatal("ERROR: Unknown ReplicationEvent code")
+		log.Println("ERROR: Unknown ReplicationEvent code")
 	}
 }

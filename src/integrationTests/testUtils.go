@@ -3,10 +3,6 @@ package main
 import (
 	"encoding/binary"
 	"fmt"
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
-	"google.golang.org/protobuf/proto"
 	"log"
 	"math/rand"
 	"net"
@@ -14,6 +10,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"google.golang.org/protobuf/proto"
 )
 
 func GetAddr(ip string, port int) (*net.Addr, error) {
@@ -157,7 +158,7 @@ func findCorrectKey(low uint32, high uint32) []byte {
 			return randKey
 		}
 	}
-	log.Fatalf("Couldn't find a key in range even after %v retries. Something is wrong", maxRetries)
+	log.Printlnf("Couldn't find a key in range even after %v retries. Something is wrong", maxRetries)
 	return nil
 }
 

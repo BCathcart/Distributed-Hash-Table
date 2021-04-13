@@ -215,7 +215,6 @@ func getHead() (*net.Addr, util.KeyRange) {
 	}
 	if head != nil {
 		//DEBUGGING
-		// log.Println("the head is", (*head.addr).String())
 		return head.addr, head.keys
 	}
 	return MyAddr, MyKeys
