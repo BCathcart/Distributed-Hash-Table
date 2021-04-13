@@ -1,5 +1,5 @@
 BRENNAN
-- Redesigned transfer service
+- Redesigned transfer handling in chain replication layer
 - Updated KVStore to be map-based
 ROZHAN
 - Chain replication routing and response handling
