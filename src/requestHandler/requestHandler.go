@@ -18,6 +18,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+var bootstrap_flag = true
+
 /**
 * Passes external messages to the appropriate handler function
  */
@@ -38,26 +40,31 @@ func InternalReqHandler(addr net.Addr, msg *pb.InternalMsg) (*net.Addr, bool, []
 
 	case requestreply.TRANSFER_FINISHED_MSG:
 
-		if membership.IsBootstrapping() {
+		if membership.IsBootstrapping() || bootstrap_flag {
+			bootstrap_flag = false
 			membership.BootstrapTransferFinishedHandler()
 		} else {
-			chainReplication.HandleTransferFinishedMsg(msg)
+			payload = chainReplication.HandleTransferFinishedMsg(msg)
+			if payload == nil {
+				respond = false
+			}
 		}
 
 	case requestreply.TRANSFER_REQ:
-		payload, respond = chainReplication.HandleTransferReq(msg)
-		// NOTE: need to use request type to identify request in reqCache
-		// responseType = requestreply.TRANSFER_RES
+		chainReplication.HandleTransferReq(&addr, msg)
+		respond = false
 
 	case requestreply.DATA_TRANSFER_MSG:
 		err = transferService.HandleDataMsg(addr, msg)
 		if err != nil {
 			log.Println("ERROR: Could not handle data transfer message - ", err)
 		}
+		respond = false
 
 	case requestreply.PING_MSG:
 		// Send nil payload back
-		log.Println("Got PINGed")
+		// log.Println("Got PINGed")
+		break
 
 	case requestreply.FORWARDED_CHAIN_UPDATE_REQ:
 		chainReplication.AddRequest(&addr, msg)
@@ -161,7 +168,7 @@ func getTransferAddr(kvRequest *pb.KVRequest) (*net.Addr, error) {
 }
 
 func InternalResHandler(addr net.Addr, msg *pb.InternalMsg) {
-	if msg.InternalID == requestreply.TRANSFER_RES || msg.InternalID == requestreply.TRANSFER_REQ {
-		chainReplication.HandleDataTransferRes(&addr, msg)
+	if msg.InternalID == requestreply.TRANSFER_FINISHED_MSG {
+		chainReplication.HandleDataTransferFinishedAck(&addr, msg)
 	}
 }

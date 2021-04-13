@@ -153,7 +153,7 @@ Based on a target key, returns the first node before
 func getPredecessor(targetKey uint32) (uint32, error) {
 	for i := len(memberStore_.members) - 1; i >= 0; i-- {
 		// skip over "Bootstrapping" nodes
-		if targetKey < memberStore_.members[i].Key && memberStore_.members[i].Status == STATUS_NORMAL {
+		if targetKey > memberStore_.members[i].Key && memberStore_.members[i].Status == STATUS_NORMAL {
 			return memberStore_.members[i].Key, nil
 		}
 	}

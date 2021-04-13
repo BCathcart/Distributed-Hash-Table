@@ -401,7 +401,6 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 	// check if request is a forwarded client request (external)
 	if reqMsg.InternalID == FORWARDED_CLIENT_REQ {
 		// acknowledge forwarded client request
-		// log.Println("Acknowledging forwarded client request  to server", messageSender.String())
 		sendUDPAck(messageSender, reqMsg.MessageID, FORWARDED_CLIENT_REQ)
 	}
 
@@ -411,7 +410,6 @@ func ProcessExternalRequest(reqMsg *pb.InternalMsg, messageSender net.Addr) {
 		sendUDPResponse(returnAddr, reqMsg.MessageID, payload, reqMsg.InternalID, false)
 	} else if fwdAddr != nil {
 		// Forward request if key doesn't correspond to this node:
-		// log.Println("Forwarding client request with msgID", reqMsg.MessageID, "to", (*fwdAddr).String())
 		forwardUDPRequest(fwdAddr, nil, reqMsg, false)
 	}
 }
@@ -441,7 +439,6 @@ func RespondToChainRequest(fwdAddr *net.Addr, respondAddr *net.Addr, isTail bool
 
 		if isForwardedChainUpdate {
 			//respond to forwarded chain update
-			// log.Println("Responding to forwarded chain update to server", (*respondAddr).String(), "for value", kvstore.BytetoInt(res.GetValue()))
 			sendUDPResponse(*respondAddr, reqMsg.MessageID, payload, reqMsg.InternalID, true)
 		}
 	} else if isForwardedChainUpdate {
@@ -485,8 +482,6 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 
 		// If cached request has return address, forward the request
 		if reqCacheEntry.returnAddr != nil {
-			// log.Println("Forwarding response for request of type", reqCacheEntry.msgType, "for value", kvstore.BytetoInt(res.GetValue()), "to", (*reqCacheEntry.returnAddr).String())
-
 			forwardUDPResponse(*reqCacheEntry.returnAddr, resMsg, !reqCacheEntry.isFirstHop)
 		}
 
@@ -494,7 +489,6 @@ func processResponse(senderAddr net.Addr, resMsg *pb.InternalMsg) {
 		if resMsg.InternalID == FORWARDED_CHAIN_UPDATE_REQ {
 			//update the cache to make request available
 			//assumes no failure!!!
-			log.Println("Received response from", senderAddr.String(), "updating rescache entry")
 			updated := setReadyResCacheEntry(resMsg.MessageID)
 			if !updated {
 				log.Println("WARN: the cached response for updated chain request from", senderAddr.String(), "was not found")
@@ -555,8 +549,8 @@ func sendUDPRequest(addr *net.Addr, payload []byte, internalID uint8) {
 	}
 
 	// Add to request cache
-	// don't cache membership requests because we don't expect a response
-	if internalID != MEMBERSHIP_REQ {
+	// don't cache membership requests and transfer requests because we don't expect a response
+	if internalID != MEMBERSHIP_REQ && internalID != TRANSFER_REQ && internalID != DATA_TRANSFER_MSG {
 		putReqCacheEntry(string(msgID), internalID, serMsg, addr, nil, false)
 	}
 

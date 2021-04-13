@@ -1,21 +1,15 @@
 BRENNAN
-- Initial membership/gossiping/failure detection design
-- Request/reply layer
-- Replica transfers when a node's successor updates
-- Bootstrapping protocol
-- Much debug
+- Redesigned transfer handling in chain replication layer
+- Updated KVStore to be map-based
 ROZHAN
-- Chain replication routing and response handling
+- Updating replication model to primary-backup model
 - request/reply layer modifications
-- passing predecessor and successors from the memberstore
-- Refactored code
-- Docker setup
-- Gossiping
 Thomas
 - Membership
 - Consistent hashing
 - Integration / unit tests
 - Update predecessor
 Shay
-- robust transfer service, retries (pushed to milestone3) 
-- testing
+- robust transfer service, retries
+- profiling
+- testing - data transfers

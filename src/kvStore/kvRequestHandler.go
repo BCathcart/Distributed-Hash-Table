@@ -119,7 +119,7 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 		}
 
 		//DEBUGGING
-		log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
+		// log.Println("PUT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(value))
 
 	case GET:
 		if len(key) > MAX_KEY_LEN {
@@ -137,16 +137,19 @@ func RequestHandler(kvRequest *pb.KVRequest, membershipCount int, requestOwner u
 			errCode = code
 		}
 
+		if errCode == NOT_FOUND {
+			log.Println("Key not found!")
+			log.Println(util.Hash([]byte(key)))
+		}
+
 		//DEBUGGING
-		log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
+		// log.Println("GOT---", "KEY", util.Hash(kvRequest.GetKey()), "VALUE:", BytetoInt(kvRes.Value))
 
 	case REMOVE:
 		if len(key) > MAX_KEY_LEN {
 			errCode = INVALID_KEY
 		} else {
-			kvStore_.lock.Lock()
 			errCode = kvStore_.Remove(key)
-			kvStore_.lock.Unlock()
 		}
 
 	case SHUTDOWN:
@@ -211,9 +214,7 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 		}
 
 	case REMOVE:
-		kvStore_.lock.Lock()
 		errCode = kvStore_.Remove(key)
-		kvStore_.lock.Unlock()
 
 	default:
 		return errors.New("Command is not an update")
@@ -229,15 +230,17 @@ func InternalDataUpdate(kvRequest *pb.KVRequest) error {
 /*
 * Deletes all keys in the kvStore within the key range
  */
-func Sweep(keys util.KeyRange) {
+func Sweep(keys util.KeyRange, callback func()) {
+	log.Println("INFO: Sweeping keys ", keys)
 	kvStore_.WipeoutKeys(keys)
+	callback()
 }
 
 /*
 * PrintKVStoreSize prints out number of elements of the kvstore
  */
 func PrintKVStoreSize() {
-	log.Print("\n\n\n =======SIZE:===============", kvStore_.data.Len(), "=========\n\n\n")
+	log.Print("\n\n\n =======SIZE:===============", len(kvStore_.data), "=========\n\n\n")
 }
 
 /**

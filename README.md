@@ -76,26 +76,63 @@ type ReqCacheEntry struct {
 NOTE: When we heard there would be “low churn”, we incorrectly assumed this meant it was highly unlikely multiple nodes would fail at the same time. With our current design, there is a chance data is lost if two nodes in the same chain fail at the exact same time. Right now we have a push-based system, but we plan to switch to a pull-based system for M3 where each node keeps track of which keyspace it has (including replicas) and hounds their predecessor for a transfer if the keyspace they're responsible for replicating grows.
 
 ## Chain Replication - handling keyspace changes 
-- When a node detects changes to its predecessors / successors, the updatePredecessor and updateSuccessor functions 
-  will determine the appropriate course of action based on the node's relative position to the new / failed node.
-    - In general, a failed predecessor / successor node means that our node will need to transfer some of its keys to a successor node, in order to maintain
-      a replication factor of 3. A new predecessor / successor node joining means that the node is no longer responsible for some of its keys and should remove them from its store.
-    - All scenarios and corresponding actions are listed here: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
-    - These scenarios above are also tested in the replicationManager_test file
+- We updated our transfer system in the chain replication layer to handle any number of node failures at the same time. For M2, our system struggled when more than one node failed at a time.
+- To keep our system easy to reason about when multiple changes happen at the same time, we created a queue for replication events and we handle them sequentially. Replication events are either transfer requests or sweeps (drop unneeded keys).
+  - When the handling of the previous event is finished, the next one can proceed
+- When the keyspace the node is responsible for (coordination + replication range) expands, a transfer event is added
+- When the keyspace the node is responsible for (coordination + replication range) shrinks because more nodes joined, a sweep event is added
+- **Sweep Event**: removes all keys in the store outside its responsible range
+- **Transfer Event**: requests a transfer for the keys it is missing from the nodes predecessor
+  - Partial transfers can take place within one transfer event when the predecessor only has some of the keys. Each time a partial transfer is received, the key range being requested is updated accordingly. The requesting node continues waiting for some time expecting the predecessor to obtain the missing keys from its own predecessor.
+- All transfer scenarios when a single node fails and joins are detailed here along with their corresponding actions: https://app.diagrams.net/#G1MaVQbmbZ6cjkAzkG8zbFdaj9r03HWV5A
 
 ## Chain Replication - routing
 - Updates (PUT, REMOVE, WIPEOUT) are routed to the head of the chain (i.e. the coordinator of the key) which performs the update and then forwards it up the chain
-- GET requests are routed to the tail. The tail node then responds to the client directly, and sends the response back down the chain, which gets 
-- forwarded back to the tail.
+- GET requests are routed to the tail. The tail node then responds to the client directly, and sends the response back down the chain, which gets forwarded back to the tail.
 - All other client requests (that are not key-value requests) are handled at the receiving node.
 
 ## Sequential Consistency
 - In order to achieve sequential consistency, updates and GET requests that are routed to each node are queued and processed in order of receipt. However, the current design does not guarrantee that update requests reach the successor in the same order and arbitrary communication delays could cause violations to sequential consistency. 
-- Note: To remedy this, a modified protocol was implemented in m2-responsehandling in which the head node waits for a response from the tail (which is routed through the seond node in the chain) that it has received the update before proceeding with the next update. If any node in the chain fails to process the request or the head does not receive a response within a specified timeout period, the head node reverses the update operation and moves on to the next request. The second node in the chain behaves similarly if it does not receive a response from the tail. Due to insufficient testing, this modification was not included in the milestone2 submission. 
-
+- 
 ## Integration Testing
+### Overview
 - To help test our code, we extended the client from the individual programming assignments.
-- This helped with debugging in the earlier phases of development for this milestone
-  - However, due to changes in how we handle messages (the node that sends
-  messages back to the client is not the same node that the client sends its requests to) they are currently not
-  fully functional, but we plan of have them updated for milestone 3.
+- To run the tests, open testDriver.go in the integrationTest, edit the parameters, then run main
+- One of the main features of these tests is being able to send keys that will always be handled by certain nodes.
+  - This is done by getting the keyRange of each node in the system, then sending keys that will be hashed
+  to always be handled by a desired target node.
+- There are three tests that can be run
+  - PrintKeyRange prints out the order of nodes in the chain based on port value.
+    - This is useful for testing the replication, e.g. could send keys to land on nodes
+    close to each other in the hashing ring
+    - It can also be used to shut down two nodes next to each other to test recovery
+  - PutGetTest sends a set amount of keys, then attempts to retrieve them
+  - shutDownTest is an extension of the PutGetTest. It sends keys, shuts down nodes and
+    then tries to retrieve the keys.
+    - Often it is useful to send keys that will only land on the nodes which will be killed
+### Potential future work
+- Aside from adding more tests, two areas for improvement would be adding a retry mechanism and
+removing the sleep function
+  - The retry function could be done similarly to the sweepReqCache() function in our own client
+  - Currently, because the messages are received in a separate goRoutine, it was challenging to figure
+  out when to stop the tests and analyze the results. As a simple fix, a long timeout (roughly 15s) was put 
+    at the end of tests in order to always have sufficient time to receive them. This could open errors in the future
+    and make the test slower than necessary.
+- Another small improvement could be to use a .json file for the arguments rather than editing the go code directly.
+Using command line arguments was considered but did not seem practical since there were so many arguments.
+    
+
+## Throughput Discussion
+Our throughput scales approximately linearly with 35 servers on micro instances in various regions scattered around north americas (see the table below).
+
+| Clients  | Throughput
+| -------- |:---------:| 
+| 1    | 14 | 
+| 16    | 218 |  
+| 32 | 437 | 
+| 64 | 876 | 
+| 128 | 1757  | 
+| 256 | 3515  |
+| 512 | 7100 | 
+
+To improve the thoughput and reduce the latency introduced by chain replication, a new routing mechanism was implemented in rozsa-primarybackup where the primary server for each key forwards the update requests to two successors and updates the Key-Value store upon successful receipt of a response from the replicas. This implementation is expected improve the throughput due to the request being forwarded to the replicas simultaneously. However, due to insufficient testing, this implementation was not included in the final submission.

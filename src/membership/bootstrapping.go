@@ -60,7 +60,5 @@ sets status to normal
 */
 func BootstrapTransferFinishedHandler() {
 	log.Println("INFO: RECEIVED BOOTSTRAPPING TRANSFER FINISHED MSG")
-	memberStore_.lock.Lock()
-	memberStore_.members[memberStore_.position].Status = STATUS_NORMAL
-	memberStore_.lock.Unlock()
+	SetStatusToNormal()
 }

@@ -3,6 +3,7 @@ package transferService
 import (
 	"log"
 	"net"
+	"time"
 
 	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
 	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
@@ -18,7 +19,6 @@ Sends a TRANSFER_FINISHED_MSG when it's done
 */
 
 func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferFinishedCallback func()) {
-
 	log.Println("TRANSFERRING KEYS TO MEMBER WITH ADDRESS: ", (*addr).String())
 	localKeyList := kvstore.GetKeyList()
 
@@ -39,6 +39,10 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 				continue
 			}
 
+			log.Println("Sending transfer message to ", (*addr).String(), " with key ", hashVal)
+
+			time.Sleep(1 * time.Millisecond)
+
 			requestreply.SendDataTransferMessage(serPayload, addr)
 
 			/* TODO: a receipt confirmation mechanism + retry policy: for now, assumes first transfer request is received successfully,
@@ -57,13 +61,14 @@ func TransferKVStoreData(addr *net.Addr, minKey uint32, maxKey uint32, transferF
 
 // DATA_TRANSFER_MSG internal msg type
 func HandleDataMsg(addr net.Addr, msg *pb.InternalMsg) error {
-	log.Println("Got data transfer message")
 	// Unmarshal KVRequest
 	kvRequest := &pb.KVRequest{}
 	err := proto.Unmarshal(msg.GetPayload(), kvRequest)
 	if err != nil {
 		return err
 	}
+
+	log.Println("Got data transfer message for key ", util.Hash(kvRequest.Key))
 
 	// TODO: send ack
 

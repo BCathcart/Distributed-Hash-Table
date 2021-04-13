@@ -55,18 +55,31 @@ func gossipHeartbeat(addr *net.Addr) {
 	for i, member := range memberStore_.members {
 		members.Members[i] = member
 	}
-	memberStore_.lock.RUnlock()
 	gspPayload, err := proto.Marshal(members)
 	if err != nil {
 		log.Println(err)
+		memberStore_.lock.RUnlock()
 		return
 	}
+	memberStore_.lock.RUnlock()
 
 	err = requestreply.SendHeartbeatMessage(gspPayload, ip, port)
 	if err != nil {
 		//corrupted ip addr/port
 		//TODO: Possibly discard member from members list
 	}
+}
+
+/* Ping all members */
+func pingMembers() {
+	memberStore_.lock.RLock()
+	for _, member := range memberStore_.members {
+		if member.Status == STATUS_NORMAL && member.Key != memberStore_.mykey {
+			addr, _ := util.GetAddr(string(member.Ip), int(member.Port))
+			requestreply.SendPingRequest(addr)
+		}
+	}
+	memberStore_.lock.RUnlock()
 }
 
 /*
@@ -132,24 +145,26 @@ func updateChain(lock *sync.RWMutex) {
 	memberStore_.lock.Unlock()
 
 	// Send pings to make sure everyone is alive
-	for _, addr := range addresses {
-		if addr != nil {
-			requestreply.SendPingRequest(addr)
-		}
-	}
-	if successor != nil {
-		addr, _ := util.GetAddr(string(successor.Ip), int(successor.Port))
-		if addr != nil {
-			requestreply.SendPingRequest(addr)
-		}
-	}
+	// for _, addr := range addresses {
+	// 	if addr != nil {
+	// 		requestreply.SendPingRequest(addr)
+	// 	}
+	// }
+	// if successor != nil {
+	// 	addr, _ := util.GetAddr(string(successor.Ip), int(successor.Port))
+	// 	if addr != nil {
+	// 		requestreply.SendPingRequest(addr)
+	// 	}
+	// }
 
-	if successor != nil {
-		successorAddr, _ := getMemberAddr(successor)
-		successorKey := successor.GetKey()
-		chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
-	} else {
-		chainReplication.UpdateSuccessor(nil, 0, 0)
+	if memberStore_.getCurrMember().Status == STATUS_NORMAL {
+		if successor != nil {
+			successorAddr, _ := getMemberAddr(successor)
+			successorKey := successor.GetKey()
+			chainReplication.UpdateSuccessor(successorAddr, memberStore_.mykey+1, successorKey)
+		} else {
+			chainReplication.UpdateSuccessor(nil, 0, 0)
+		}
+		chainReplication.UpdatePredecessors(addresses, keys)
 	}
-	chainReplication.UpdatePredecessors(addresses, keys)
 }

@@ -1,18 +1,13 @@
 package util
 
 import (
+	"encoding/binary"
 	"hash/crc32"
 	"log"
 	"net"
 	"strconv"
 	"strings"
 )
-
-func GetAddressBytes(udpAddr *net.UDPAddr) []byte {
-	ipStr := string(udpAddr.IP)
-	addrString := CreateAddressString(ipStr, udpAddr.Port)
-	return []byte(addrString)
-}
 
 func CreateAddressString(ipStr string, port int) string {
 	return ipStr + ":" + strconv.Itoa(port)
@@ -52,6 +47,34 @@ func DeserializeAddr(serAddr []byte) (*net.Addr, error) {
 	return &addr, err
 }
 
+func SerializeKeyRangeTranReq(keys KeyRange, forceTransfer bool) []byte {
+	var force byte = 0
+	if forceTransfer {
+		force = 1
+	}
+	return append(SerializeKeyRange(keys), force)
+}
+
+func DeserializeKeyRangeTranReq(serKeyRange []byte) (KeyRange, bool) {
+	force := serKeyRange[8]
+	return DeserializeKeyRange(serKeyRange), force == 1
+}
+
+func SerializeKeyRange(keys KeyRange) []byte {
+	serLow := make([]byte, 4)
+	binary.LittleEndian.PutUint32(serLow, keys.Low)
+	serHigh := make([]byte, 4)
+	binary.LittleEndian.PutUint32(serHigh, keys.High)
+	return append(serLow, serHigh...)
+}
+
+func DeserializeKeyRange(serKeyRange []byte) KeyRange {
+	keys := KeyRange{}
+	keys.Low = binary.LittleEndian.Uint32(serKeyRange[0:4])
+	keys.High = binary.LittleEndian.Uint32(serKeyRange[4:8])
+	return keys
+}
+
 func GetNodeKey(ipStr string, portStr string) uint32 {
 	return crc32.ChecksumIEEE([]byte(ipStr + portStr))
 }
@@ -64,15 +87,29 @@ func Hash(bytes []byte) uint32 {
 	return crc32.ChecksumIEEE(bytes)
 }
 
+// TODO(Brennan): any problems with making it inclusive?
 func BetweenKeys(targetKey uint32, lowerKey uint32, upperKey uint32) bool {
 	if lowerKey < upperKey {
-		return targetKey < upperKey && targetKey > lowerKey
+		return targetKey <= upperKey && targetKey >= lowerKey
 	} else { // Edge case where there's a wrap-around
-		return targetKey > lowerKey || targetKey < upperKey
+		return targetKey >= lowerKey || targetKey <= upperKey
 	}
 }
 
-// TODO(Brennan): check that this works
+func OverlappingKeyRange(keys1 KeyRange, keys2 KeyRange) *KeyRange {
+	if BetweenKeys(keys1.Low, keys2.Low, keys2.High) && BetweenKeys(keys1.High, keys2.Low, keys2.High) {
+		return &keys1
+	} else if BetweenKeys(keys2.Low, keys1.Low, keys1.High) && BetweenKeys(keys2.High, keys1.Low, keys1.High) {
+		return &keys2
+	} else if BetweenKeys(keys1.Low, keys2.Low, keys2.High) {
+		return &KeyRange{keys1.Low, keys2.High}
+	} else if BetweenKeys(keys1.High, keys2.Low, keys2.High) {
+		return &KeyRange{keys2.Low, keys1.High}
+	} else {
+		return nil
+	}
+}
+
 func RemoveAddrFromArr(s []*net.Addr, i int) []*net.Addr {
 	s[len(s)-1], s[i] = s[i], s[len(s)-1]
 	return s[:len(s)-1]
@@ -85,7 +122,7 @@ func RemoveAddrFromArr(s []*net.Addr, i int) []*net.Addr {
 func GetOutboundIP() net.IP {
 	conn, err := net.Dial("udp", "8.8.8.8:80")
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 	defer conn.Close()
 
@@ -93,14 +130,6 @@ func GetOutboundIP() net.IP {
 
 	return localAddr.IP
 }
-
-//func PrintInternalMsg(iMsg *pb.InternalMsg) {
-//	//log.Println("INTERNAL MESSAGE, ID:", iMsg.InternalID)
-//	//log.Println(iMsg.MessageID)
-//	//log.Println(iMsg.Payload)
-//	//log.Println(iMsg.CheckSum)
-//	//log.Println(iMsg.IsResponse)
-//}
 
 /**
 * Computes the IEEE CRC checksum based on the message ID and message payload.
