@@ -5,10 +5,7 @@ ROZHAN
 - Updating replication model to primary-backup model
 - request/reply layer modifications
 Thomas
-- Membership
-- Consistent hashing
 - Integration / unit tests
-- Update predecessor
 Shay
 - robust transfer service, retries
 - profiling
