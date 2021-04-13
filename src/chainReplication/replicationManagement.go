@@ -226,23 +226,6 @@ func expectingTransferFor(key uint32) bool {
 		!util.BetweenKeys(key, currentRange.Low, currentRange.High)
 }
 
-/*
-	Helper function for getting predecessor address.
-*/
-func getPredAddr(predIdx int) *net.Addr {
-	if predecessors[predIdx] == nil {
-		return nil
-	}
-	return predecessors[predIdx].addr
-}
-
-func getPredKey(predNode *predecessorNode) uint32 {
-	if predNode == nil {
-		return MyKeys.High
-	}
-	return predNode.keys.High
-}
-
 func printKeyState(newRange *util.KeyRange) {
 	log.Println("\nKeys State:")
 	log.Println("MyKeys=", MyKeys)

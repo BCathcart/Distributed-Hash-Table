@@ -9,12 +9,6 @@ import (
 	"strings"
 )
 
-func GetAddressBytes(udpAddr *net.UDPAddr) []byte {
-	ipStr := string(udpAddr.IP)
-	addrString := CreateAddressString(ipStr, udpAddr.Port)
-	return []byte(addrString)
-}
-
 func CreateAddressString(ipStr string, port int) string {
 	return ipStr + ":" + strconv.Itoa(port)
 }
@@ -136,14 +130,6 @@ func GetOutboundIP() net.IP {
 
 	return localAddr.IP
 }
-
-//func PrintInternalMsg(iMsg *pb.InternalMsg) {
-//	//log.Println("INTERNAL MESSAGE, ID:", iMsg.InternalID)
-//	//log.Println(iMsg.MessageID)
-//	//log.Println(iMsg.Payload)
-//	//log.Println(iMsg.CheckSum)
-//	//log.Println(iMsg.IsResponse)
-//}
 
 /**
 * Computes the IEEE CRC checksum based on the message ID and message payload.
