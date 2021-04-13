@@ -7,6 +7,9 @@ import (
 	"log"
 )
 
+/*
+	This file was copied over from protocol.go in the requestreply layer.
+*/
 func MsgListener() error {
 	buffer := make([]byte, MAX_BUFFER_SIZE)
 

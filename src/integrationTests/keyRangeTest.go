@@ -1,19 +1,9 @@
 package main
 
 import (
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"log"
 	"sort"
 )
-
-func getKeysFromPort() {
-	keyList := getSortedKeyList()
-	log.Println("PORT ORDERS")
-	for i := 0; i < len(keyList); i++ {
-		printPortFromKey(uint32(keyList[i]))
-	}
-
-}
 
 func getSortedKeyList() []int {
 	keyList := make([]int, 0, len(portKeyMap))
@@ -22,10 +12,6 @@ func getSortedKeyList() []int {
 	}
 	sort.Ints(keyList)
 	return keyList
-}
-
-func printPortFromKey(portKey uint32) {
-	log.Print(getPortFromKey(portKey), ", ")
 }
 
 func getPortFromKey(portKey uint32) int {
@@ -39,12 +25,10 @@ func getPortFromKey(portKey uint32) int {
 
 /*
 	Gets port associated with a certain key (assumes no changes to keylist since
-	removal
+	removal)
 */
 func getPortForSentKey(key int) int {
 	keyList := getSortedKeyList()
-	//print(keyList)
-	//print(key)
 	for _, value := range keyList {
 		keyListPort := getPortFromKey(uint32(value))
 		if key < value {
@@ -55,15 +39,14 @@ func getPortForSentKey(key int) int {
 }
 
 /*
-	This test is useful for debugging purposes. It will print out the order of all nodes in the system.
+	This test is useful for debugging purposes. It will print out the order of all nodes in the system,
+	and their associated keys.
 */
-func keyRangeTest() {
-	// =========================== CUSTOM PARAMETERS ===========================
-	// ======================================================
-	for i := 0; i < len(listOfPorts); i++ {
-		addr, _ := util.GetAddr(localIPAddress, listOfPorts[i])
-		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
+func printNodeOrder() {
+	keyList := getSortedKeyList()
+	log.Println("PORT ORDERS")
+	for i := 0; i < len(keyList); i++ {
+		portKey := uint32(keyList[i])
+		log.Printf("Port: %v, Associated key %v", getPortFromKey(portKey), portKey)
 	}
-	getKeysFromPort()
-	intentionallyCrash()
 }

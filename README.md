@@ -94,8 +94,30 @@ NOTE: When we heard there would be “low churn”, we incorrectly assumed this 
 - Note: To remedy this, a modified protocol was implemented in m2-responsehandling in which the head node waits for a response from the tail (which is routed through the seond node in the chain) that it has received the update before proceeding with the next update. If any node in the chain fails to process the request or the head does not receive a response within a specified timeout period, the head node reverses the update operation and moves on to the next request. The second node in the chain behaves similarly if it does not receive a response from the tail. Due to insufficient testing, this modification was not included in the milestone2 submission. 
 
 ## Integration Testing
+### Overview
 - To help test our code, we extended the client from the individual programming assignments.
-- This helped with debugging in the earlier phases of development for this milestone
-  - However, due to changes in how we handle messages (the node that sends
-  messages back to the client is not the same node that the client sends its requests to) they are currently not
-  fully functional, but we plan of have them updated for milestone 3.
+- To run the tests, open testDriver.go in the integrationTest, edit the parameters, then run main
+- One of the main features of these tests is being able to send keys that will always be handled by certain nodes.
+  - This is done by getting the keyRange of each node in the system, then sending keys that will be hashed
+  to always be handled by a desired target node.
+- There are three tests that can be run
+  - PrintKeyRange prints out the order of nodes in the chain based on port value.
+    - This is useful for testing the replication, e.g. could send keys to land on nodes
+    close to each other in the hashing ring
+    - It can also be used to shut down two nodes next to each other to test recovery
+  - PutGetTest sends a set amount of keys, then attempts to retrieve them
+  - shutDownTest is an extension of the PutGetTest. It sends keys, shuts down nodes and
+    then tries to retrieve the keys.
+    - Often it is useful to send keys that will only land on the nodes which will be killed
+### Potential future work
+- Aside from adding more tests, two areas for improvement would be adding a retry mechanism and
+removing the sleep function
+  - The retry function could be done similarly to the sweepReqCache() function in our own client
+  - Currently, because the messages are received in a separate goRoutine, it was challenging to figure
+  out when to stop the tests and analyze the results. As a simple fix, a long timeout (roughly 15s) was put 
+    at the end of tests in order to always have sufficient time to receive them. This could open errors in the future
+    and make the test slower than necessary.
+- Another small improvement could be to use a .json file for the arguments rather than editing the go code directly.
+Using command line arguments was considered but did not seem practical since there were so many arguments.
+    
+
