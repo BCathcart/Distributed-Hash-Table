@@ -1,46 +1,65 @@
 package main
 
 import (
+	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
 	"net"
 	"strconv"
 )
 
-/*
-	These tests were used primarily for debugging, however are no longer functional as we have changed the
-	request / reply functionality so that the node a client sends to may not be the node that replies.
-
-	This means we need to switch to a connectionless setup, and cache requests / responses similar to the internal
-	messages. Currently a work in progress.
-*/
-
+// Global variables
 var ClientConn *net.PacketConn
 var testReqCache_ *testCache
 var putGetCache_ *putGetCache
+var portKeyMap = make(map[int]uint32)
+var prevRequests []*pb.KVRequest
 
-// ================ Edit these parameters ================
-var localIPAddress = "192.168.1.74"
+// Global constants
+const SHUTDOWN_TEST = 1
+const PRINT_NODEORDER = 2
+const PUTGET_TEST = 3
+
+// ================ Global parameters - edit these ================
+var localIPAddress = "192.168.1.74" // Make sure to use your actual IP, not 127.0.0.1 or localhost
 var clientPort = 8090
-var targetPorts = []int{8081, 8083, 8084} // Ports you want keys to land on. Will get replicated at next two ports
-// Kill Ports & alive ports are only used in the shutdown test
-//var killPorts = []int{8083, 8081, 8082} // Ports to kill
-var killPorts = targetPorts
-var alivePorts = []int{8080, 8082, 8085, 8086, 8087, 8088, 8089} // Ports to keep alive
+var targetPorts = []int{8083} // Ports you want keys to land on. Will get replicated at next two ports
+
+//	Kill Ports & alive ports are only used in the shutdown test.
+var killPorts = targetPorts              // Ports to kill - does not have to be the same as targetPorts but is often convenient
+var alivePorts = []int{8080, 8081, 8082} // Ports to keep alive
 var listOfPorts = append(alivePorts, killPorts...)
+
+const testToRun = SHUTDOWN_TEST
 
 // ========================================================
 func main() {
-	//log.Println(ClientConn.LocalAddr().String())
 	validateParams()
 	testReqCache_ = newTestCache()
 	putGetCache_ = newPutGetCache()
-	connection, _ := net.ListenPacket("udp", ":"+strconv.Itoa(clientPort))
+	connection, err := net.ListenPacket("udp", ":"+strconv.Itoa(clientPort))
+	if err != nil {
+		panic(err)
+	}
+	setupPortMap()
+	if testToRun != PRINT_NODEORDER {
+		go MsgListener()
+	}
 	ClientConn = &connection
-	//defer ClientConn.Close()
-	//replicationTest() //Work in progress
-	//putGetTests() Work in progress
-	//keyRangeTest() // Run this test first to get your key orders
-	go MsgListener()
-	shutdownTest()
+	switch testToRun {
+	case SHUTDOWN_TEST:
+		shutdownTest()
+	case PUTGET_TEST:
+		putGetTest()
+	case PRINT_NODEORDER:
+		printNodeOrder()
+	}
+}
+
+func setupPortMap() {
+	for i := 0; i < len(listOfPorts); i++ {
+		addr, _ := util.GetAddr(localIPAddress, listOfPorts[i])
+		portKeyMap[listOfPorts[i]] = util.GetAddrKey(addr)
+	}
 }
 
 func paramError(errString string) {
