@@ -2,12 +2,8 @@ BRENNAN
 - Redesigned transfer handling in chain replication layer
 - Updated KVStore to be map-based
 ROZHAN
-- Chain replication routing and response handling
+- Updating replication model to primary-backup model
 - request/reply layer modifications
-- passing predecessor and successors from the memberstore
-- Refactored code
-- Docker setup
-- Gossiping
 Thomas
 - Membership
 - Consistent hashing
