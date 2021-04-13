@@ -26,7 +26,7 @@ var reqQueue chan request = nil
  */
 func AddRequest(addr *net.Addr, msg *pb.InternalMsg) {
 	if len(reqQueue) < cap(reqQueue) {
-		log.Println("Adding request to queue", len(reqQueue))
+		// log.Println("Adding request to queue", len(reqQueue))
 		reqQueue <- request{msg: msg, sender: addr}
 	} else {
 		log.Println("WARN: Request queue full --- Dropping request") //TODO reply to node in chain
@@ -65,7 +65,7 @@ func handleForwardedChainUpdate(kvRequest *pb.KVRequest) (*net.Addr, bool, []byt
 
 	if errcode != kvstore.OK {
 		// don't forward if the request failed
-		log.Println("Replying to Forwarded Chain update REQUEST FAILED")
+		// log.Println("Replying to Forwarded Chain update REQUEST FAILED")
 		return nil, false, payload, true, err
 	}
 	// otherwise forward the update to the successor
@@ -90,7 +90,8 @@ func handleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 
 	coarseLock.RLock()
 	myKeys := MyKeys
-	succAddr := successor.addr
+	currentKeys := currentRange
+	// succAddr := successor.addr
 	coarseLock.RUnlock()
 
 	// If this node is the HEAD updates (PUT, REMOVE and WIPEOUT) are performed here and then forwarded
@@ -101,16 +102,18 @@ func handleClientRequest(kvRequest *pb.KVRequest) (*net.Addr, []byte, bool, erro
 			return nil, payload, true, err
 		}
 
-		log.Println("Forwarding Chain update for key", key, "to", (*succAddr).String())
+		// log.Println("Forwarding Chain update for key", key, "to", (*succAddr).String())
 
 		return successor.addr, nil, true, err
 	}
+	// GET responded to here if they correspond to the HEAD
 	_, headKeys := getHead()
 	// GET responded to here if they correspond to the HEAD
 	if headKeys.IncludesKey(key) && kvstore.IsGetRequest(kvRequest) && !expectingTransferFor(key) {
 		payload, err, _ := kvstore.RequestHandler(kvRequest, 1, headKeys)
 		return nil, payload, true, err
 	}
+	log.Println("WARN: The request for key", key, "is no longer mine. MyKeys ", myKeys, " and currentKeys ", currentKeys)
 	return nil, nil, false, nil
 }
 

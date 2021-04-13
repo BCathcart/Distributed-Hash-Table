@@ -92,10 +92,12 @@ func Init(addr *net.Addr) {
 }
 
 func SetKeyRange(keylow uint32, keyhigh uint32) {
+	coarseLock.Lock()
 	MyKeys.Low = keylow
 	MyKeys.High = keyhigh
 	currentRange = MyKeys
 	responsibleRange = MyKeys
+	coarseLock.Unlock()
 
 	log.Println("INFO: Setting key range")
 	printKeyState(nil)
@@ -142,7 +144,18 @@ func removeExpectedTransfer(keys util.KeyRange) bool {
 }
 
 func addSendingTransfer(keys util.KeyRange) {
-	sendingTransfers = append(sendingTransfers, keys)
+	var exists = false
+	for _, transfer := range sendingTransfers {
+		if transfer.Low == keys.Low && transfer.High == keys.High {
+			exists = true
+			break
+		}
+	}
+	if exists {
+		log.Println("ERROR: Transfer already exists")
+	} else {
+		sendingTransfers = append(sendingTransfers, keys)
+	}
 }
 
 func removeSendingTransfer(keys util.KeyRange) bool {
@@ -210,7 +223,7 @@ func getHead() (*net.Addr, util.KeyRange) {
 
 func expectingTransferFor(key uint32) bool {
 	return util.BetweenKeys(key, responsibleRange.Low, responsibleRange.High) &&
-		!util.BetweenKeys(key, currentRange.Low, currentRange.Low)
+		!util.BetweenKeys(key, currentRange.Low, currentRange.High)
 }
 
 /*
