@@ -124,3 +124,17 @@ removing the sleep function
 Using command line arguments was considered but did not seem practical since there were so many arguments.
     
 
+## Throughput Discussion
+Our throughput scales approximately linearly with 35 servers on micro instances in various regions scattered around north americas (see the table below).
+
+| Clients  | Throughput
+| -------- |:---------:| 
+| 1    | 14 | 
+| 16    | 218 |  
+| 32 | 437 | 
+| 64 | 876 | 
+| 128 | 1757  | 
+| 256 | 3515  |
+| 512 | 7100 | 
+
+<ROZSA DISCUSSION>
