@@ -1,4 +1,4 @@
-module github.com/CPEN-431-2021/dht-abcpen431
+module github.com/BCathcart/Distributed-Hash-Table
 
 go 1.15
 

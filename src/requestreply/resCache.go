@@ -4,7 +4,7 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 )
 
 //RES_CACHE_TIMEOUT - for sweeing cache

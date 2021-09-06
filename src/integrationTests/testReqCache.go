@@ -1,7 +1,7 @@
 package main
 
 import (
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
 	maps "github.com/ross-oreto/go-list-map"
 	"sync"
 	"time"

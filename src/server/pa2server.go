@@ -7,10 +7,10 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/membership"
-	requesthandler "github.com/CPEN-431-2021/dht-abcpen431/src/requestHandler"
-	requestreply "github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"github.com/BCathcart/Distributed-Hash-Table/src/membership"
+	requesthandler "github.com/BCathcart/Distributed-Hash-Table/src/requestHandler"
+	requestreply "github.com/BCathcart/Distributed-Hash-Table/src/requestreply"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 )
 
 /**

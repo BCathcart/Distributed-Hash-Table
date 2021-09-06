@@ -3,7 +3,7 @@ WORKDIR /src
 ENV CGO_ENGABLED=0
 COPY go.* ./
 RUN go mod download
-COPY *.txt /etc/cpen431/
+COPY *.txt /etc/dht/
 COPY . .
 ARG TARGETOS
 ARG TARGETARCH
@@ -13,4 +13,4 @@ FROM alpine AS bin
 ENV GOTRACEBACK=single
 WORKDIR /src
 COPY --from=build /out/dht-server .
-COPY --from=build /etc/cpen431/peers.txt /etc/cpen431/peers.txt
+COPY --from=build /etc/dht/peers.txt /etc/dht/peers.txt

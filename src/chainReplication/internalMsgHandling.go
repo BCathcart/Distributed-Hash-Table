@@ -5,10 +5,10 @@ import (
 	"net"
 	"time"
 
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
+	"github.com/BCathcart/Distributed-Hash-Table/src/requestreply"
+	"github.com/BCathcart/Distributed-Hash-Table/src/transferService"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 )
 
 /*

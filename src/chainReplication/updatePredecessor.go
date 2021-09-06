@@ -4,7 +4,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 )
 
 func UpdatePredecessors(addr []*net.Addr, keys []uint32) {

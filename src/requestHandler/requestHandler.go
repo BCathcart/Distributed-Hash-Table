@@ -7,14 +7,14 @@ import (
 	"strconv"
 	"strings"
 
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/membership"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	"github.com/BCathcart/Distributed-Hash-Table/src/chainReplication"
+	kvstore "github.com/BCathcart/Distributed-Hash-Table/src/kvStore"
+	"github.com/BCathcart/Distributed-Hash-Table/src/membership"
+	"github.com/BCathcart/Distributed-Hash-Table/src/requestreply"
+	"github.com/BCathcart/Distributed-Hash-Table/src/transferService"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 	"google.golang.org/protobuf/proto"
 )
 

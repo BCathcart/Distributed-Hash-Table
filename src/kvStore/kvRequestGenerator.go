@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
 	"google.golang.org/protobuf/proto"
 )
 

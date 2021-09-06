@@ -5,12 +5,12 @@ import (
 	"net"
 	"sync"
 
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	kvstore "github.com/BCathcart/Distributed-Hash-Table/src/kvStore"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/chainReplication"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
+	"github.com/BCathcart/Distributed-Hash-Table/src/chainReplication"
+	"github.com/BCathcart/Distributed-Hash-Table/src/requestreply"
 	"github.com/golang/protobuf/proto"
 )
 

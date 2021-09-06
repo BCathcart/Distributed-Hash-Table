@@ -1,5 +1,5 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'us-west1-docker.pkg.dev/cpen431-305521/cpen431repo/dhtserver:latest', '--target', 'bin', '.']
+    args: ['build', '-t', 'us-west1-docker.pkg.dev/course-305521/courserepo/dhtserver:latest', '--target', 'bin', '.']
 images:
-  - 'us-west1-docker.pkg.dev/cpen431-305521/cpen431repo/dhtserver:latest'
+  - 'us-west1-docker.pkg.dev/course-305521/courserepo/dhtserver:latest'

@@ -2,9 +2,9 @@ package main
 
 import (
 	"bytes"
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
-	kvstore "github.com/CPEN-431-2021/dht-abcpen431/src/kvStore"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/util"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
+	kvstore "github.com/BCathcart/Distributed-Hash-Table/src/kvStore"
+	"github.com/BCathcart/Distributed-Hash-Table/src/util"
 	"log"
 	"net"
 	"strconv"

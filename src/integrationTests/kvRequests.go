@@ -1,6 +1,6 @@
 package main
 
-import pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+import pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
 
 const PUT = 0x01
 const GET = 0x02

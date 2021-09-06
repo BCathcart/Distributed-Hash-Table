@@ -5,8 +5,8 @@ import (
 	"net"
 	"time"
 
-	"github.com/CPEN-431-2021/dht-abcpen431/src/requestreply"
-	"github.com/CPEN-431-2021/dht-abcpen431/src/transferService"
+	"github.com/BCathcart/Distributed-Hash-Table/src/requestreply"
+	"github.com/BCathcart/Distributed-Hash-Table/src/transferService"
 )
 
 /*

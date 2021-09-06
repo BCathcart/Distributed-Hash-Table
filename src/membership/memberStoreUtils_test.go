@@ -1,7 +1,7 @@
 package membership
 
 import (
-	pb "github.com/CPEN-431-2021/dht-abcpen431/pb/protobuf"
+	pb "github.com/BCathcart/Distributed-Hash-Table/pb/protobuf"
 	"log"
 	"testing"
 )
